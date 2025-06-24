@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import os
 from dotenv import load_dotenv
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # Load environment variable
 load_dotenv()
@@ -40,18 +40,20 @@ def insert_to_supabase(chat_id, delay, message, user, user_timestamp):
 
 @app.route('/api/clip', methods=['GET', 'POST'])
 def clip_handler():
-    # Support GET query params or POST body
     user = request.args.get('user') or request.form.get('user') or 'unknown'
     chat_id = request.args.get('chatId') or request.form.get('chatId') or 'id22'
     msg = request.args.get('msg') or request.form.get('msg') or ''
-    delay = request.args.get('delay') or request.form.get('delay') or '22'
+    delay = int(request.args.get('delay') or request.form.get('delay') or '22')
 
-    user_timestamp = datetime.now(timezone.utc).isoformat()
+    # Compute actual user timestamp by subtracting delay
+    server_time = datetime.now(timezone.utc)
+    user_time = server_time - timedelta(seconds=delay)
+    user_timestamp = user_time.isoformat()
 
     insert_to_supabase(chat_id, delay, msg, user, user_timestamp)
 
     return jsonify({
-        "message": f"Timestamp marked at {user_timestamp} (delay {delay}s) by {user} with chat id {chat_id}",
+        "message": f"User timestamp marked at {user_timestamp} (delay {delay}s) by {user} with chat id {chat_id}",
         "msg": msg
     })
 
