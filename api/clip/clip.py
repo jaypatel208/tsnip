@@ -13,10 +13,17 @@ class handler(BaseHTTPRequestHandler):
         # Expected format: /api/clip/chatid/message
         path_parts = parsed_url.path.strip('/').split('/')
         
-        if len(path_parts) >= 4 and path_parts[0] == 'api' and path_parts[1] == 'clip':
-            chatid = path_parts[2]
-            msg = path_parts[3]
-        else:
+        # For dynamic route [...params], the path will be /api/clip/[...params]/chatid/message
+        # We need to find the chatid and message after the 'clip' part
+        try:
+            clip_index = path_parts.index('clip')
+            if len(path_parts) > clip_index + 2:
+                chatid = path_parts[clip_index + 1]
+                msg = path_parts[clip_index + 2]
+            else:
+                chatid = 'unknown'
+                msg = 'default'
+        except (ValueError, IndexError):
             chatid = 'unknown'
             msg = 'default'
         
@@ -30,7 +37,8 @@ class handler(BaseHTTPRequestHandler):
         body = {
             "message": f"✅ Timestamp marked at {timestamp} (delay {delay}s) for chat {chatid}",
             "chatid": chatid,
-            "msg": msg
+            "msg": msg,
+            "path_debug": path_parts  # Add this for debugging
         }
 
         # Send response
