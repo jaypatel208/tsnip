@@ -8,7 +8,7 @@ class handler(BaseHTTPRequestHandler):
         # Parse the URL and query parameters
         parsed_url = urlparse(self.path)
         query_params = parse_qs(parsed_url.query)
-        
+
         # Extract parameters with defaults
         user = query_params.get('user', ['unknown'])[0]
         clip_id = query_params.get('clipId', ['id22'])[0]
