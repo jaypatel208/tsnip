@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
-# Load environment variables
+# Load environment variable
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
