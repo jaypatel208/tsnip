@@ -1,7 +1,7 @@
 {
     "builds": [
       {
-        "src": "clip.py",
+        "src": "/api/clip.py",
         "use": "@vercel/python"
       }
     ],
