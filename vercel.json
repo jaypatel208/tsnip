@@ -1,0 +1,14 @@
+{
+    "builds": [
+      {
+        "src": "clip.py",
+        "use": "@vercel/python"
+      }
+    ],
+    "routes": [
+      {
+        "src": "/(.*)",
+        "dest": "/api/clip.py"
+      }
+    ]
+  }
