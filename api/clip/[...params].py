@@ -9,25 +9,10 @@ class handler(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query_params = parse_qs(parsed_url.query)
         
-        # Extract chatid and message from path
-        # Expected format: /api/clip/chatid/message
-        path_parts = parsed_url.path.strip('/').split('/')
-        
-        # For dynamic route [...params], the path will be /api/clip/[...params]/chatid/message
-        # We need to find the chatid and message after the 'clip' part
-        try:
-            clip_index = path_parts.index('clip')
-            if len(path_parts) > clip_index + 2:
-                chatid = path_parts[clip_index + 1]
-                msg = path_parts[clip_index + 2]
-            else:
-                chatid = 'unknown'
-                msg = 'default'
-        except (ValueError, IndexError):
-            chatid = 'unknown'
-            msg = 'default'
-        
-        # Extract delay from query parameters
+        # Extract parameters with defaults
+        user = query_params.get('user', ['unknown'])[0]
+        clip_id = query_params.get('clipId', ['id22'])[0]
+        msg = query_params.get('msg', [''])[0]
         delay = query_params.get('delay', ['22'])[0]
 
         # Get current timestamp
@@ -35,10 +20,8 @@ class handler(BaseHTTPRequestHandler):
 
         # Create response body
         body = {
-            "message": f"✅ Timestamp marked at {timestamp} (delay {delay}s) for chat {chatid}",
-            "chatid": chatid,
-            "msg": msg,
-            "path_debug": path_parts  # Add this for debugging
+            "message": f"Timestamp marked at {timestamp} (delay {delay}s) by {user} with clip id {clip_id}",
+            "msg": msg
         }
 
         # Send response
