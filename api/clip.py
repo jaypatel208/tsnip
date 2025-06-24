@@ -13,10 +13,10 @@ SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 
 app = Flask(__name__)
 
-def insert_to_supabase(chat_id, delay, message, user, event_timestamp):
+def insert_to_supabase(chat_id, delay, message, user, user_timestamp):
     data = {
         "chat_id": chat_id,
-        "event_timestamp": event_timestamp,
+        "user_timestamp": user_timestamp,
         "delay": int(delay),
         "message": message,
         "user_name": user
@@ -46,12 +46,12 @@ def clip_handler():
     msg = request.args.get('msg') or request.form.get('msg') or ''
     delay = request.args.get('delay') or request.form.get('delay') or '22'
 
-    event_timestamp = datetime.now(timezone.utc).isoformat()
+    user_timestamp = datetime.now(timezone.utc).isoformat()
 
-    insert_to_supabase(chat_id, delay, msg, user, event_timestamp)
+    insert_to_supabase(chat_id, delay, msg, user, user_timestamp)
 
     return jsonify({
-        "message": f"Timestamp marked at {event_timestamp} (delay {delay}s) by {user} with chat id {chat_id}",
+        "message": f"Timestamp marked at {user_timestamp} (delay {delay}s) by {user} with chat id {chat_id}",
         "msg": msg
     })
 
