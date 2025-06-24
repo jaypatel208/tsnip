@@ -11,7 +11,7 @@ class handler(BaseHTTPRequestHandler):
 
         # Extract parameters with defaults
         user = query_params.get('user', ['unknown'])[0]
-        clip_id = query_params.get('clipId', ['id22'])[0]
+        chat_id = query_params.get('chatId', ['id22'])[0]
         msg = query_params.get('msg', [''])[0]
         delay = query_params.get('delay', ['22'])[0]
 
@@ -20,7 +20,7 @@ class handler(BaseHTTPRequestHandler):
 
         # Create response body
         body = {
-            "message": f"Timestamp marked at {timestamp} (delay {delay}s) by {user} with clip id {clip_id}",
+            "message": f"Timestamp marked at {timestamp} (delay {delay}s) by {user} with chat id {chat_id}",
             "msg": msg
         }
 
