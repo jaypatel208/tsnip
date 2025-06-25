@@ -11,7 +11,7 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
-YT_DATA_API_V3 = os.getenv("YT_DATA_API_v3")
+YT_DATA_API_V3 = os.getenv("YT_DATA_API_V3")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 
 youtube_queue = queue.Queue()
