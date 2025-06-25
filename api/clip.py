@@ -21,7 +21,7 @@ youtube_processor_available = False
 
 # Check if youtube_processor module is available at startup
 try:
-    import youtube_processor
+    from . import youtube_processor
 
     youtube_processor_available = True
     print("YouTube processor module is available")
