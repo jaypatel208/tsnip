@@ -253,6 +253,9 @@ def queue_youtube_processing(chat_id, channel_id, delay=5):
 def stop_youtube_processor():
     processor.stop_background_processor()
 
+def process_youtube_request(chat_id, channel_id):
+    processor.process_youtube_request(chat_id, channel_id)
+
 
 if __name__ == "__main__":
     processor = initialize_youtube_processor()
