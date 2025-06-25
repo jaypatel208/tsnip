@@ -5,8 +5,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
-# Import the YouTube processor
-from youtube_processor import initialize_youtube_processor, queue_youtube_processing
+# YouTube processor will be imported conditionally when needed
 
 # Load environment variables
 load_dotenv()
@@ -56,8 +55,15 @@ def ensure_youtube_processor_initialized():
     """Initialize YouTube processor if not already done"""
     global youtube_processor
     if youtube_processor is None:
-        print("Initializing YouTube processor...")
-        youtube_processor = initialize_youtube_processor()
+        try:
+            # Import YouTube processor functions only when needed
+            from youtube_processor import initialize_youtube_processor
+
+            print("Initializing YouTube processor...")
+            youtube_processor = initialize_youtube_processor()
+        except ImportError as e:
+            print(f"Warning: Could not import youtube_processor: {e}")
+            return None
     return youtube_processor
 
 
@@ -115,11 +121,22 @@ def clip_handler():
             print(
                 f"Chat ID {chat_id} not found in YT table, initializing YouTube processor..."
             )
-            ensure_youtube_processor_initialized()
-            print(
-                f"Queuing YouTube processing for channel: {channel_id}, chat: {chat_id}"
-            )
-            queue_youtube_processing(chat_id, channel_id, delay=5)  # 5 second delay
+            processor = ensure_youtube_processor_initialized()
+            if processor:
+                try:
+                    # Import queue function when needed
+                    from youtube_processor import queue_youtube_processing
+
+                    print(
+                        f"Queuing YouTube processing for channel: {channel_id}, chat: {chat_id}"
+                    )
+                    queue_youtube_processing(
+                        chat_id, channel_id, delay=5
+                    )  # 5 second delay
+                except ImportError as e:
+                    print(f"Warning: Could not import queue_youtube_processing: {e}")
+            else:
+                print("YouTube processor could not be initialized")
         else:
             print(
                 f"Chat ID {chat_id} already exists in YT table, skipping YouTube processing"
@@ -153,18 +170,26 @@ def manual_youtube_process():
         return {"error": "Missing chat_id or channel_id"}, 400
 
     # Ensure processor is initialized for manual processing
-    ensure_youtube_processor_initialized()
+    processor = ensure_youtube_processor_initialized()
+    if not processor:
+        return {"error": "YouTube processor could not be initialized"}, 500
 
-    print(
-        f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
-    )
-    queue_youtube_processing(chat_id, channel_id, delay=1)  # Immediate processing
+    try:
+        # Import queue function when needed
+        from youtube_processor import queue_youtube_processing
 
-    return {
-        "message": "YouTube processing queued",
-        "chat_id": chat_id,
-        "channel_id": channel_id,
-    }
+        print(
+            f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
+        )
+        queue_youtube_processing(chat_id, channel_id, delay=1)  # Immediate processing
+
+        return {
+            "message": "YouTube processing queued",
+            "chat_id": chat_id,
+            "channel_id": channel_id,
+        }
+    except ImportError as e:
+        return {"error": f"Could not import YouTube processor: {str(e)}"}, 500
 
 
 if __name__ == "__main__":
