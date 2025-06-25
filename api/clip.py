@@ -11,6 +11,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 TOOL_USED = os.getenv("TOOL_USED")
+YT_DATA_API_V3 = os.getenv("YT_DATA_API_v3")
+SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 
 app = Flask(__name__)
 
