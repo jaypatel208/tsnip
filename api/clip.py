@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, Response
 import requests
 import os
