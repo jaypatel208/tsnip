@@ -57,10 +57,12 @@ def clip_handler():
 
     insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
+    title_part = f" — titled '{msg}'" if msg else ""
     comment = (
-        f"Timestamped (with a {delay}s delay) by {user} — titled '{msg}'. "
+        f"Timestamped (with a {delay}s delay) by {user}{title_part}. "
         f"All timestamps get commented after the stream ends. Tool used: {TOOL_USED}"
     )
+
     return Response(comment, mimetype="text/plain")
 
 
