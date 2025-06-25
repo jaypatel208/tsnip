@@ -20,7 +20,6 @@ youtube_queue = queue.Queue()
 class YouTubeStreamProcessor:
     def __init__(self):
         self.processing = False
-        self.processed_combinations = set()
 
     def get_live_streams(self, nightbot_chatid, channel_id, timeout=10):
         if not YT_DATA_API_V3:
@@ -168,12 +167,6 @@ class YouTubeStreamProcessor:
             return False
 
     def process_youtube_request(self, chat_id, channel_id):
-        key = f"{chat_id}_{channel_id}"
-        if key in self.processed_combinations:
-            print(f"Skipping duplicate processing for {key}")
-            return False
-
-        self.processed_combinations.add(key)
         print(f"Processing YouTube request: chat_id={chat_id}, channel_id={channel_id}")
 
         try:
@@ -184,18 +177,18 @@ class YouTubeStreamProcessor:
 
             success = self.insert_yt_streams_to_supabase(streams_data)
             if success:
-                print(f"YouTube processing complete for {key}")
+                print(
+                    f"YouTube processing complete for chat_id={chat_id}, channel_id={channel_id}"
+                )
                 return True
             else:
-                print(f"YouTube processing failed for {key}")
+                print(
+                    f"YouTube processing failed for chat_id={chat_id}, channel_id={channel_id}"
+                )
                 return False
         except Exception as e:
             print(f"Exception during YouTube processing: {str(e)}")
             return False
-        finally:
-            threading.Timer(
-                300, lambda: self.processed_combinations.discard(key)
-            ).start()
 
     def start_background_processor(self):
         if self.processing:
@@ -252,6 +245,7 @@ def queue_youtube_processing(chat_id, channel_id, delay=5):
 
 def stop_youtube_processor():
     processor.stop_background_processor()
+
 
 def process_youtube_request(chat_id, channel_id):
     processor.process_youtube_request(chat_id, channel_id)
