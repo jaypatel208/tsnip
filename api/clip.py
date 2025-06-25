@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, Response
 import requests
 import os
 from dotenv import load_dotenv
@@ -57,11 +57,11 @@ def clip_handler():
 
     insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
-    return jsonify(
-        {
-            "message": f"Timestamped (with a {delay}s delay) by {user} — titled '{msg}'. All timestamps get commented after the stream ends. Tool used: {TOOL_USED} 🤞🏼"
-        }
+    comment = (
+        f"Timestamped (with a {delay}s delay) by {user} — titled '{msg}'. "
+        f"All timestamps get commented after the stream ends. Tool used: {TOOL_USED}"
     )
+    return Response(comment, mimetype="text/plain")
 
 
 if __name__ == "__main__":
