@@ -1,14 +1,19 @@
 {
-    "builds": [
-      {
-        "src": "/api/clip.py",
-        "use": "@vercel/python"
-      }
-    ],
-    "routes": [
-      {
-        "src": "/(.*)",
-        "dest": "/api/clip.py"
-      }
-    ]
+  "builds": [
+    {
+      "src": "/api/clip.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/clip.py"
+    }
+  ],
+  "functions": {
+    "api/clip.py": {
+      "includeFiles": "api/youtube_processor.py"
+    }
   }
+}
