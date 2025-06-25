@@ -4,8 +4,6 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
-# YouTube processor will be imported conditionally when needed
-
 # Load environment variables
 load_dotenv()
 
@@ -19,6 +17,17 @@ app = Flask(__name__)
 
 # YouTube processor will be initialized conditionally
 youtube_processor = None
+youtube_processor_available = False
+
+# Check if youtube_processor module is available at startup
+try:
+    import youtube_processor
+
+    youtube_processor_available = True
+    print("YouTube processor module is available")
+except ImportError as e:
+    print(f"YouTube processor module not available: {e}")
+    youtube_processor_available = False
 
 
 def check_chat_id_exists(chat_id):
@@ -53,17 +62,34 @@ def check_chat_id_exists(chat_id):
 def ensure_youtube_processor_initialized():
     """Initialize YouTube processor if not already done"""
     global youtube_processor
+
+    if not youtube_processor_available:
+        print("YouTube processor module not available, skipping initialization")
+        return None
+
     if youtube_processor is None:
         try:
-            # Import YouTube processor functions only when needed
-            from youtube_processor import initialize_youtube_processor
-
             print("Initializing YouTube processor...")
-            youtube_processor = initialize_youtube_processor()
-        except ImportError as e:
-            print(f"Warning: Could not import youtube_processor: {e}")
+            youtube_processor = youtube_processor.initialize_youtube_processor()
+            print("YouTube processor initialized successfully")
+        except Exception as e:
+            print(f"Error initializing YouTube processor: {e}")
             return None
     return youtube_processor
+
+
+def queue_youtube_processing_safe(chat_id, channel_id, delay=5):
+    """Safely queue YouTube processing with error handling"""
+    if not youtube_processor_available:
+        print("YouTube processor not available, skipping processing")
+        return False
+
+    try:
+        youtube_processor.queue_youtube_processing(chat_id, channel_id, delay)
+        return True
+    except Exception as e:
+        print(f"Error queueing YouTube processing: {e}")
+        return False
 
 
 def insert_to_supabase(channelid, chat_id, delay, message, user, user_timestamp):
@@ -118,22 +144,20 @@ def clip_handler():
         # Check if chat_id already exists in SUPABASE_YT_TABLE
         if not check_chat_id_exists(chat_id):
             print(
-                f"Chat ID {chat_id} not found in YT table, initializing YouTube processor..."
+                f"Chat ID {chat_id} not found in YT table, attempting YouTube processing..."
             )
+
+            # Try to initialize and queue YouTube processing
             processor = ensure_youtube_processor_initialized()
             if processor:
-                try:
-                    # Import queue function when needed
-                    from youtube_processor import queue_youtube_processing
-
-                    print(
-                        f"Queuing YouTube processing for channel: {channel_id}, chat: {chat_id}"
-                    )
-                    queue_youtube_processing(
-                        chat_id, channel_id, delay=5
-                    )  # 5 second delay
-                except ImportError as e:
-                    print(f"Warning: Could not import queue_youtube_processing: {e}")
+                print(
+                    f"Queuing YouTube processing for channel: {channel_id}, chat: {chat_id}"
+                )
+                success = queue_youtube_processing_safe(chat_id, channel_id, delay=5)
+                if success:
+                    print("YouTube processing queued successfully")
+                else:
+                    print("Failed to queue YouTube processing")
             else:
                 print("YouTube processor could not be initialized")
         else:
@@ -155,12 +179,21 @@ def clip_handler():
 def health_check():
     """Health check endpoint"""
     processor_status = "initialized" if youtube_processor else "not initialized"
-    return {"status": "healthy", "youtube_processor": processor_status}
+    module_status = "available" if youtube_processor_available else "not available"
+
+    return {
+        "status": "healthy",
+        "youtube_processor": processor_status,
+        "youtube_module": module_status,
+    }
 
 
 @app.route("/api/youtube/manual-process", methods=["POST"])
 def manual_youtube_process():
     """Manual trigger for YouTube processing (for testing)"""
+    if not youtube_processor_available:
+        return {"error": "YouTube processor module not available"}, 503
+
     data = request.get_json() or {}
     chat_id = data.get("chat_id") or request.args.get("chatId")
     channel_id = data.get("channel_id") or request.args.get("channelId")
@@ -173,24 +206,22 @@ def manual_youtube_process():
     if not processor:
         return {"error": "YouTube processor could not be initialized"}, 500
 
-    try:
-        # Import queue function when needed
-        from youtube_processor import queue_youtube_processing
+    print(
+        f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
+    )
 
-        print(
-            f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
-        )
-        queue_youtube_processing(chat_id, channel_id, delay=1)  # Immediate processing
-
+    success = queue_youtube_processing_safe(chat_id, channel_id, delay=1)
+    if success:
         return {
             "message": "YouTube processing queued",
             "chat_id": chat_id,
             "channel_id": channel_id,
         }
-    except ImportError as e:
-        return {"error": f"Could not import YouTube processor: {str(e)}"}, 500
+    else:
+        return {"error": "Failed to queue YouTube processing"}, 500
 
 
 if __name__ == "__main__":
     print("Starting Flask app with conditional YouTube processor initialization...")
+    print(f"YouTube processor available: {youtube_processor_available}")
     app.run(debug=True)
