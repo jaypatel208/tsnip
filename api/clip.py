@@ -10,6 +10,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
+TOOL_USED = os.getenv("TOOL_USED")
 
 app = Flask(__name__)
 
@@ -58,8 +59,7 @@ def clip_handler():
 
     return jsonify(
         {
-            "message": f"User timestamp marked at {user_timestamp} (delay {delay}s) by {user} with chat id {chat_id} and channel id {channel_id}",
-            "msg": msg,
+            "message": f"Timestamped (with a {delay}s delay) by {user} — titled '{msg}'. All timestamps get commented after the stream ends. Tool used: {TOOL_USED} 🤞🏼"
         }
     )
 
