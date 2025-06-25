@@ -19,7 +19,6 @@ app = Flask(__name__)
 youtube_processor = None
 youtube_processor_available = False
 
-# Check if youtube_processor module is available at startup
 try:
     from . import youtube_processor
 
@@ -31,7 +30,6 @@ except ImportError as e:
 
 
 def check_chat_id_exists(chat_id):
-    """Check if chat_id already exists in SUPABASE_YT_TABLE"""
     if not SUPABASE_YT_TABLE:
         print("SUPABASE_YT_TABLE not configured")
         return False
@@ -60,7 +58,6 @@ def check_chat_id_exists(chat_id):
 
 
 def ensure_youtube_processor_initialized():
-    """Initialize YouTube processor if not already done"""
     global youtube_processor
 
     if not youtube_processor_available:
@@ -78,22 +75,7 @@ def ensure_youtube_processor_initialized():
     return youtube_processor
 
 
-def queue_youtube_processing_safe(chat_id, channel_id, delay=5):
-    """Safely queue YouTube processing with error handling"""
-    if not youtube_processor_available:
-        print("YouTube processor not available, skipping processing")
-        return False
-
-    try:
-        youtube_processor.queue_youtube_processing(chat_id, channel_id, delay)
-        return True
-    except Exception as e:
-        print(f"Error queueing YouTube processing: {e}")
-        return False
-
-
 def insert_to_supabase(channelid, chat_id, delay, message, user, user_timestamp):
-    """Insert clip data to main Supabase table"""
     data = {
         "channel_id": channelid,
         "chat_id": chat_id,
@@ -122,7 +104,6 @@ def insert_to_supabase(channelid, chat_id, delay, message, user, user_timestamp)
 
 @app.route("/api/clip", methods=["GET", "POST"])
 def clip_handler():
-    """Phase 1: Handle clip requests and store them"""
     user = request.args.get("user") or request.form.get("user") or "unknown"
     channel_id = (
         request.args.get("channelid") or request.form.get("channelid") or "id22"
@@ -131,41 +112,36 @@ def clip_handler():
     msg = request.args.get("msg") or request.form.get("msg") or ""
     delay = int(request.args.get("delay") or request.form.get("delay") or "22")
 
-    # Compute actual user timestamp by subtracting delay
     server_time = datetime.now(timezone.utc)
     user_time = server_time - timedelta(seconds=delay)
     user_timestamp = user_time.isoformat()
 
-    # Phase 1: Insert clip data to main table
     success = insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
-    # Phase 2: Queue YouTube processing (runs in background after delay)
-    if success and channel_id != "id22":  # Only process real channel IDs
-        # Check if chat_id already exists in SUPABASE_YT_TABLE
+    if success and channel_id != "id22":
         if not check_chat_id_exists(chat_id):
             print(
                 f"Chat ID {chat_id} not found in YT table, attempting YouTube processing..."
             )
 
-            # Try to initialize and queue YouTube processing
             processor = ensure_youtube_processor_initialized()
             if processor:
                 print(
-                    f"Queuing YouTube processing for channel: {channel_id}, chat: {chat_id}"
+                    f"Processing YouTube request immediately for channel: {channel_id}, chat: {chat_id}"
                 )
-                success = queue_youtube_processing_safe(chat_id, channel_id, delay=5)
-                if success:
-                    print("YouTube processing queued successfully")
-                else:
-                    print("Failed to queue YouTube processing")
+                try:
+                    yt_success = processor.process_youtube_request(chat_id, channel_id)
+                    if yt_success:
+                        print("YouTube processing completed successfully")
+                    else:
+                        print("YouTube processing failed during execution")
+                except Exception as e:
+                    print(f"Error during YouTube processing: {str(e)}")
             else:
                 print("YouTube processor could not be initialized")
         else:
-            print(
-                f"Chat ID {chat_id} already exists in YT table, skipping YouTube processing"
-            )
+            print(f"Chat ID {chat_id} already exists in YT table, skipping processing")
 
-    # Return immediate response (don't wait for YouTube processing)
     title_part = f" — titled '{msg}'" if msg else ""
     comment = (
         f"Timestamped (with a {delay}s delay) by {user}{title_part}. "
@@ -177,7 +153,6 @@ def clip_handler():
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    """Health check endpoint"""
     processor_status = "initialized" if youtube_processor else "not initialized"
     module_status = "available" if youtube_processor_available else "not available"
 
@@ -190,7 +165,6 @@ def health_check():
 
 @app.route("/api/youtube/manual-process", methods=["POST"])
 def manual_youtube_process():
-    """Manual trigger for YouTube processing (for testing)"""
     if not youtube_processor_available:
         return {"error": "YouTube processor module not available"}, 503
 
@@ -201,24 +175,26 @@ def manual_youtube_process():
     if not chat_id or not channel_id:
         return {"error": "Missing chat_id or channel_id"}, 400
 
-    # Ensure processor is initialized for manual processing
     processor = ensure_youtube_processor_initialized()
     if not processor:
         return {"error": "YouTube processor could not be initialized"}, 500
 
-    print(
-        f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
-    )
-
-    success = queue_youtube_processing_safe(chat_id, channel_id, delay=1)
-    if success:
-        return {
-            "message": "YouTube processing queued",
-            "chat_id": chat_id,
-            "channel_id": channel_id,
-        }
-    else:
-        return {"error": "Failed to queue YouTube processing"}, 500
+    try:
+        print(
+            f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
+        )
+        success = processor.process_youtube_request(chat_id, channel_id)
+        if success:
+            return {
+                "message": "YouTube processing completed",
+                "chat_id": chat_id,
+                "channel_id": channel_id,
+            }
+        else:
+            return {"error": "YouTube processing failed"}, 500
+    except Exception as e:
+        print(f"Exception in manual processing: {str(e)}")
+        return {"error": str(e)}, 500
 
 
 if __name__ == "__main__":
