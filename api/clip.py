@@ -1,8 +1,10 @@
-from flask import Flask, request, Response
+from flask import Flask, request, Response, jsonify
 import requests
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from api.monitor_streams import handler as monitor_handler
+
 
 # Load environment variables
 load_dotenv()
@@ -12,6 +14,7 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 TOOL_USED = os.getenv("TOOL_USED")
+CRON_SECRET = os.getenv("CRON_SECRET")
 
 app = Flask(__name__)
 
@@ -195,6 +198,19 @@ def manual_youtube_process():
     except Exception as e:
         print(f"Exception in manual processing: {str(e)}")
         return {"error": str(e)}, 500
+
+
+@app.route("/api/monitor-streams", methods=["POST"])
+def cron_monitor_streams():
+    secret = request.args.get("secret") or request.headers.get("X-Cron-Secret")
+    if not secret or secret != CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        monitor_handler()
+        return jsonify({"message": "Stream monitoring executed successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
