@@ -200,7 +200,7 @@ def manual_youtube_process():
         return {"error": str(e)}, 500
 
 
-@app.route("/api/monitor-streams", methods=["POST"])
+@app.route("/api/monitor-streams", methods=["GET", "POST"])
 def cron_monitor_streams():
     secret = request.args.get("secret") or request.headers.get("X-Cron-Secret")
     if not secret or secret != CRON_SECRET:
