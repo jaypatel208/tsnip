@@ -40,7 +40,9 @@ You'll need **Nightbot** set up on your channel. If you haven't done this yet, f
 !addcom !ts $(urlfetch https://tsnip.vercel.app/api/clip?user=$(user)&chatId=$(chatid)&channelid=$(channelid)&msg=$(querystring)&delay=22)
 ```
 
-2. **Customize Delay** - Adjust the `delay=22` parameter based on your stream setup:
+2. **Set User Permissions** (Recommended) - To prevent spam, change the **Required User-Level** to **Moderator** in Nightbot settings.
+
+3. **Customize Delay** - Adjust the `delay=22` parameter based on your stream setup:
 
 | Stream Type | Recommended Delay | Use Case |
 |-------------|------------------|----------|
