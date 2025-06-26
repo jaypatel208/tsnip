@@ -42,15 +42,17 @@ def get_unmarked_streams():
     return resp.json() if resp.status_code == 200 else []
 
 
-def is_stream_ended(video_id):
+def get_stream_times(video_id):
     url = f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}&key={YT_DATA_API_V3}"
     resp = requests.get(url)
     if resp.status_code != 200:
-        return None
+        return None, None
     items = resp.json().get("items", [])
-    return (
-        items[0].get("liveStreamingDetails", {}).get("actualEndTime") if items else None
-    )
+    if not items:
+        return None, None
+
+    details = items[0].get("liveStreamingDetails", {})
+    return details.get("actualStartTime"), details.get("actualEndTime")
 
 
 def get_chat_messages(chat_id):
@@ -63,12 +65,12 @@ def get_chat_messages(chat_id):
     return resp.json() if resp.status_code == 200 else []
 
 
-def format_timestamp(end_time_str, user_time_str):
-    end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+def format_timestamp(start_time_str, user_time_str):
+    start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
     user_time = datetime.fromisoformat(user_time_str)
-    delta = end_time - user_time
-    total_seconds = int(delta.total_seconds())
-    hours, remainder = divmod(abs(total_seconds), 3600)
+    delta = user_time - start_time
+    total_seconds = max(0, int(delta.total_seconds()))  # avoid negatives
+    hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return (
         f"{hours:02}:{minutes:02}:{seconds:02}"
@@ -112,21 +114,27 @@ def handler():
         chat_id = row["chat_id"]
         title = row["title"]
 
-        end_time = is_stream_ended(video_id)
-        if not end_time:
+        start_time, end_time = get_stream_times(video_id)
+        if not start_time or not end_time:
             continue
 
         messages = get_chat_messages(chat_id)
         if not messages:
             continue
 
-        lines = [
-            f"{format_timestamp(end_time, m['user_timestamp'])} | {m['message']} | {m['user_name']}"
-            for m in messages
-        ]
+        lines = []
+        for m in messages:
+            timestamp = format_timestamp(start_time, m["user_timestamp"])
+            message = m.get("message", "").strip()
+            user = m["user_name"]
+
+            if title and message:
+                lines.append(f"{timestamp} | {message} | {user}")
+            else:
+                lines.append(f"{timestamp} | {user}")
 
         comment_body = (
-            f"Time stamps of  {title}\n\n"
+            (f"Time stamps of  {title}\n\n" if title else "Time stamps:\n\n")
             + "\n".join(lines)
             + "\n\nThank you for using Tsnip."
         )
