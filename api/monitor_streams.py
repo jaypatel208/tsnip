@@ -134,7 +134,7 @@ def handler():
                 lines.append(f"{timestamp} | {user}")
 
         comment_body = (
-            (f"Time stamps of  {title}\n\n" if title else "Time stamps:\n\n")
+            (f"Time stamps of {title}:\n\n" if title else "Time stamps:\n\n")
             + "\n".join(lines)
             + "\n\nThank you for using Tsnip."
         )
