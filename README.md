@@ -77,6 +77,22 @@ After your live stream ends, within **2 minutes** our bot will automatically com
 
 ---
 
+## 🌟 Trusted by Creators
+
+<div align="center">
+  <div style="display: inline-block; text-align: center; margin: 20px;">
+    <img src="assets/Kiwi_fps.jpg" alt="Kiwi FPS" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/>
+    <br>
+    <strong><a href="https://www.youtube.com/@kiwi_fps" target="_blank" style="text-decoration: none; color: #4CAF50;">@kiwi_fps</a></strong>
+    <br>
+    <em style="font-size: 0.9em; color: #666;">Professional Player</em>
+  </div>
+</div>
+
+*Join the growing community of streamers who trust Tsnip for their timestamping needs!*
+
+---
+
 ## 🛠️ Tech Stack
 
 Tsnip is built with modern, reliable technologies:
