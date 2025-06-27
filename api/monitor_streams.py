@@ -33,7 +33,7 @@ def get_youtube_client():
 
 
 def get_unmarked_streams():
-    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?marked=eq.false&select=video_id,id,chat_id,title"
+    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?marked=eq.false&select=video_id,id,chat_id"
     headers = {
         "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
@@ -112,7 +112,6 @@ def handler():
         video_id = row["video_id"]
         uuid = row["id"]
         chat_id = row["chat_id"]
-        title = row["title"]
 
         start_time, end_time = get_stream_times(video_id)
         if not start_time or not end_time:
@@ -128,15 +127,13 @@ def handler():
             message = m.get("message", "").strip()
             user = m["user_name"]
 
-            if title and message:
+            if message:
                 lines.append(f"{timestamp} | {message} | {user}")
             else:
                 lines.append(f"{timestamp} | {user}")
 
         comment_body = (
-            (f"Time stamps of {title}:\n\n" if title else "Time stamps:\n\n")
-            + "\n".join(lines)
-            + "\n\nThank you for using Tsnip."
+            "Time stamps:\n\n" + "\n".join(lines) + "\n\nThank you for using Tsnip."
         )
 
         if post_comment(video_id, comment_body):
