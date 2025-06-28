@@ -147,7 +147,7 @@ def clip_handler():
 
     title_part = f" — titled '{msg}'" if msg else ""
     comment = (
-        f"Timestamped (with a {delay}s delay) by {user}{title_part}. "
+        f"Timestamped (with a -{delay}s delay) by {user}{title_part}. "
         f"All timestamps get commented after the stream ends. Tool used: {TOOL_USED}"
     )
 
