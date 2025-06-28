@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from api.monitor_streams import handler as monitor_handler
+from template import get_comment_template, template_exists
 
 
 # Load environment variables
@@ -112,13 +113,11 @@ def insert_to_supabase(channelid, chat_id, delay, message, user, user_timestamp)
 
 @app.route("/api/clip", methods=["GET", "POST"])
 def clip_handler():
-    user = request.args.get("user") or request.form.get("user") or "unknown"
-    channel_id = (
-        request.args.get("channelid") or request.form.get("channelid") or "id22"
-    )
-    chat_id = request.args.get("chatId") or request.form.get("chatId") or "idchat22"
+    user = request.args.get("user") or request.form.get("user")
+    channel_id = request.args.get("channelid") or request.form.get("channelid")
+    chat_id = request.args.get("chatId") or request.form.get("chatId")
     msg = request.args.get("msg") or request.form.get("msg") or ""
-    delay = int(request.args.get("delay") or request.form.get("delay") or "22")
+    delay = int(request.args.get("delay") or request.form.get("delay"))
 
     # Check if any parameter is a placeholder -> if so, don't save to DB
     if (
@@ -127,7 +126,6 @@ def clip_handler():
         or is_placeholder_value(chat_id)
         or (msg and is_placeholder_value(msg))
     ):
-
         error_response = "Error: Command not executed properly. Make sure to use this command in a stream chat where the bot variables can be resolved."
         print(
             f"Placeholder values detected - user: {user}, channel_id: {channel_id}, chat_id: {chat_id}, msg: {msg}"
@@ -168,10 +166,18 @@ def clip_handler():
         else:
             print(f"Chat ID {chat_id} already exists in YT table, skipping processing")
 
+    # Get the appropriate template for this channel
     title_part = f" — titled '{msg}'" if msg else ""
-    comment = (
-        f"Timestamped (with a -{delay}s delay) by {user}{title_part}. "
-        f"All timestamps get commented after the stream ends. Tool used: {TOOL_USED}"
+    template = get_comment_template(channel_id)
+
+    # Format the comment using the template
+    comment = template.format(
+        user=user, delay=delay, title_part=title_part, tool_used=TOOL_USED
+    )
+
+    # Optional: Log which template was used for debugging
+    print(
+        f"Using template for channel {channel_id}: {'custom' if template_exists(channel_id) else 'default'}"
     )
 
     return Response(comment, mimetype="text/plain")
