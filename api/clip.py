@@ -120,7 +120,7 @@ def clip_handler():
     msg = request.args.get("msg") or request.form.get("msg") or ""
     delay = int(request.args.get("delay") or request.form.get("delay") or "22")
 
-    # Check if any parameter is a placeholder - if so, don't save to DB
+    # Check if any parameter is a placeholder -> if so, don't save to DB
     if (
         is_placeholder_value(user)
         or is_placeholder_value(channel_id)
