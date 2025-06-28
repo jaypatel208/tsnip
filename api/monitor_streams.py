@@ -29,7 +29,7 @@ def get_youtube_client():
         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
     )
     creds.refresh(Request())
-    return build("youtube", "v3", credentials=creds)
+    return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
 
 def get_unmarked_streams():
@@ -97,14 +97,23 @@ def post_comment(video_id, comment_body):
         return False
 
 
-def mark_video_as_processed(row_id):
+def mark_video_as_processed(row_id, stream_start_time):
+    if isinstance(stream_start_time, str):
+        stream_start_time = datetime.fromisoformat(
+            stream_start_time.replace("Z", "+00:00")
+        )
+    stream_start_time_str = stream_start_time.isoformat()
     url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?id=eq.{row_id}"
     headers = {
         "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
         "Content-Type": "application/json",
     }
-    data = {"marked": True, "status": "ended"}
+    data = {
+        "marked": True,
+        "status": "ended",
+        "stream_start_time": stream_start_time_str,
+    }
     requests.patch(url, headers=headers, json=data)
 
 
@@ -138,7 +147,7 @@ def handler():
         )
 
         if post_comment(video_id, comment_body):
-            mark_video_as_processed(uuid)
+            mark_video_as_processed(uuid, start_time)
 
 
 if __name__ == "__main__":
