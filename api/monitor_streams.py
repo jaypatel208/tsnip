@@ -1,7 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
@@ -56,7 +56,7 @@ def get_stream_times(video_id):
 
 
 def get_chat_messages(chat_id):
-    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?chat_id=eq.{chat_id}&select=message,user_name,user_timestamp"
+    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?chat_id=eq.{chat_id}&select=message,user_name,user_timestamp,delay"
     headers = {
         "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
@@ -65,10 +65,11 @@ def get_chat_messages(chat_id):
     return resp.json() if resp.status_code == 200 else []
 
 
-def format_timestamp(start_time_str, user_time_str):
+def format_timestamp(start_time_str, user_time_str, delay):
     start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
     user_time = datetime.fromisoformat(user_time_str)
-    delta = user_time - start_time
+    adjusted_user_time = user_time - timedelta(seconds=delay)
+    delta = adjusted_user_time - start_time
     total_seconds = max(0, int(delta.total_seconds()))  # avoid negatives
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
@@ -123,7 +124,7 @@ def handler():
 
         lines = []
         for m in messages:
-            timestamp = format_timestamp(start_time, m["user_timestamp"])
+            timestamp = format_timestamp(start_time, m["user_timestamp"], m["delay"])
             message = m.get("message", "").strip()
             user = m["user_name"]
 
