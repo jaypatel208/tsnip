@@ -32,6 +32,11 @@ except ImportError as e:
     youtube_processor_available = False
 
 
+def is_placeholder_value(value):
+    """Check if a value is a placeholder/template variable"""
+    return str(value) in ["$(user)", "$(chatid)", "$(channelid)", "$(querystring)"]
+
+
 def check_chat_id_exists(chat_id):
     if not SUPABASE_YT_TABLE:
         print("SUPABASE_YT_TABLE not configured")
@@ -115,13 +120,31 @@ def clip_handler():
     msg = request.args.get("msg") or request.form.get("msg") or ""
     delay = int(request.args.get("delay") or request.form.get("delay") or "22")
 
+    # Check if any parameter is a placeholder - if so, don't save to DB
+    if (
+        is_placeholder_value(user)
+        or is_placeholder_value(channel_id)
+        or is_placeholder_value(chat_id)
+        or (msg and is_placeholder_value(msg))
+    ):
+
+        error_response = "Error: Command not executed properly. Make sure to use this command in a stream chat where the bot variables can be resolved."
+        print(
+            f"Placeholder values detected - user: {user}, channel_id: {channel_id}, chat_id: {chat_id}, msg: {msg}"
+        )
+        return Response(error_response, mimetype="text/plain", status=400)
+
     server_time = datetime.now(timezone.utc)
     user_time = server_time - timedelta(seconds=delay)
     user_timestamp = user_time.isoformat()
 
     success = insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
-    if success and channel_id != "id22":
+    if not success:
+        error_response = "Error: Failed to save timestamp. Please try again."
+        return Response(error_response, mimetype="text/plain", status=500)
+
+    if success:
         if not check_chat_id_exists(chat_id):
             print(
                 f"Chat ID {chat_id} not found in YT table, attempting YouTube processing..."
