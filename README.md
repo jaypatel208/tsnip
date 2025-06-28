@@ -137,6 +137,11 @@ Your support helps us:
         <strong>Buy Me a Coffee</strong><br>
         <a href="https://buymeacoffee.com/jaypatel208">☕ Support Here</a>
       </td>
+      <td align="center">
+        <img src="assets/github_sponsor.svg" alt="GitHub Sponsors" width="150"/><br>
+        <strong>GitHub Sponsors</strong><br>
+        <a href="https://github.com/sponsors/jaypatel208">💖 Sponsor on GitHub</a>
+      </td>
     </tr>
   </table>
 </div>
