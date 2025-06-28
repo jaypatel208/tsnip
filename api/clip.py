@@ -4,8 +4,12 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from api.monitor_streams import handler as monitor_handler
-from template import get_comment_template, template_exists
 
+# Updated import to handle both local and Vercel/package contexts
+try:
+    from .template import get_comment_template, template_exists
+except ImportError:
+    from template import get_comment_template, template_exists
 
 # Load environment variables
 load_dotenv()
@@ -19,7 +23,6 @@ CRON_SECRET = os.getenv("CRON_SECRET")
 
 app = Flask(__name__)
 
-# YouTube processor will be initialized conditionally
 youtube_processor = None
 youtube_processor_available = False
 
@@ -34,7 +37,6 @@ except ImportError as e:
 
 
 def is_placeholder_value(value):
-    """Check if a value is a placeholder/template variable"""
     return str(value) in ["$(user)", "$(chatid)", "$(channelid)", "$(querystring)"]
 
 
@@ -119,7 +121,6 @@ def clip_handler():
     msg = request.args.get("msg") or request.form.get("msg") or ""
     delay = int(request.args.get("delay") or request.form.get("delay"))
 
-    # Check if any parameter is a placeholder -> if so, don't save to DB
     if (
         is_placeholder_value(user)
         or is_placeholder_value(channel_id)
@@ -166,16 +167,13 @@ def clip_handler():
         else:
             print(f"Chat ID {chat_id} already exists in YT table, skipping processing")
 
-    # Get the appropriate template for this channel
     title_part = f" — titled '{msg}'" if msg else ""
     template = get_comment_template(channel_id)
 
-    # Format the comment using the template
     comment = template.format(
         user=user, delay=delay, title_part=title_part, tool_used=TOOL_USED
     )
 
-    # Optional: Log which template was used for debugging
     print(
         f"Using template for channel {channel_id}: {'custom' if template_exists(channel_id) else 'default'}"
     )
