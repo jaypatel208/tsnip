@@ -6,6 +6,8 @@
   **Automated Timestamping for YouTube Live Streams**
   
   *Making highlights creation effortless for creators and viewers*
+
+  📖 [Read the full story on Medium ](https://tinyurl.com/3kkvj7ua) - Learn about the journey behind Tsnip
 </div>
 
 ---
