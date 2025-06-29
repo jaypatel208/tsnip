@@ -92,6 +92,12 @@ After your live stream ends, within **2 minutes** our bot will automatically com
         <strong><a href="https://www.youtube.com/@Exion" target="_blank" style="text-decoration: none; color: #4CAF50;">@Exion</a></strong><br>
         <em style="font-size: 0.9em; color: #666;">Variety Game Streamer</em>
       </td>
+      <td align="center">
+        <img src="assets/BloodLine.jpg" alt="BloodLine" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
+        <strong><a href="https://www.youtube.com/@BloodLineYT" target="_blank" style="text-decoration: none; color: #4CAF50;">@BloodLineYT</a></strong><br>
+        <em style="font-size: 0.9em; color: #666;">Full-time Content Creator</em>
+      </td>
+    </tr>
   </table>
 </div>
 
