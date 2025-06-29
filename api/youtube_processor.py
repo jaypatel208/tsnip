@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import threading
 import queue
+import logging
 
 # Load environment variables
 load_dotenv()
@@ -15,6 +16,12 @@ YT_DATA_API_V3 = os.getenv("YT_DATA_API_V3")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 
 youtube_queue = queue.Queue()
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 class YouTubeStreamProcessor:
@@ -52,9 +59,11 @@ class YouTubeStreamProcessor:
                 }
 
             channel_name = items[0]["snippet"]["title"]
+            logger.info(f"Found channel: {channel_name}")
 
-            # Try event types
-            for event_type in ["live", "upcoming", "completed"]:
+            # Try event types - prioritize live, then completed
+            for event_type in ["live", "completed"]:
+                logger.info(f"Searching for {event_type} streams...")
                 search_url = "https://www.googleapis.com/youtube/v3/search"
                 search_params = {
                     "part": "snippet",
@@ -72,6 +81,7 @@ class YouTubeStreamProcessor:
                     )
                     resp.raise_for_status()
                     videos = resp.json().get("items", [])
+
                     for video in videos:
                         video_id = video["id"]["videoId"]
                         streams.append(
@@ -83,20 +93,31 @@ class YouTubeStreamProcessor:
                                 "channel": channel_name,
                             }
                         )
+
                     if streams:
-                        break
-                except:
+                        logger.info(f"Found {len(streams)} {event_type} streams")
+                        break  # Stop after finding streams of the first available type
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Error searching for {event_type} streams: {str(e)}")
+                    continue
+                except Exception as e:
+                    logger.error(
+                        f"Unexpected error searching for {event_type} streams: {str(e)}"
+                    )
                     continue
 
             return {"nightbot_chatid": nightbot_chatid, "streams": streams}
 
         except requests.exceptions.Timeout:
+            logger.error(f"Timeout getting streams for channel {channel_id}")
             return {
                 "nightbot_chatid": nightbot_chatid,
                 "streams": [],
                 "error": "Timeout",
             }
         except Exception as e:
+            logger.error(f"Error getting streams for channel {channel_id}: {str(e)}")
             return {"nightbot_chatid": nightbot_chatid, "streams": [], "error": str(e)}
 
     def check_existing_streams(self, chat_id, video_id):
@@ -108,14 +129,22 @@ class YouTubeStreamProcessor:
             url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?chat_id=eq.{chat_id}&video_id=eq.{video_id}"
             resp = requests.get(url, headers=headers)
             if resp.status_code == 200:
-                return len(resp.json()) > 0
-        except:
-            pass
+                exists = len(resp.json()) > 0
+                logger.debug(f"Stream {video_id} exists: {exists}")
+                return exists
+            else:
+                logger.warning(
+                    f"Failed to check existing stream {video_id}: {resp.status_code}"
+                )
+        except Exception as e:
+            logger.error(f"Error checking existing stream {video_id}: {str(e)}")
         return False
 
     def insert_yt_streams_to_supabase(self, streams_data):
         if not streams_data.get("streams"):
-            print(f"No streams found for chat_id: {streams_data['nightbot_chatid']}")
+            logger.info(
+                f"No streams found for chat_id: {streams_data['nightbot_chatid']}"
+            )
             return False
 
         headers = {
@@ -142,10 +171,10 @@ class YouTubeStreamProcessor:
                     }
                 )
             else:
-                print(f"Stream {stream['video_id']} already exists, skipping...")
+                logger.info(f"Stream {stream['video_id']} already exists, skipping...")
 
         if not new_records:
-            print(
+            logger.info(
                 f"No new streams to insert for chat_id: {streams_data['nightbot_chatid']}"
             )
             return True
@@ -157,46 +186,49 @@ class YouTubeStreamProcessor:
                 json=new_records,
             )
             if resp.status_code == 201:
-                print(f"Inserted {len(new_records)} new YouTube stream records")
+                logger.info(f"✓ Inserted {len(new_records)} new YouTube stream records")
                 return True
             else:
-                print(f"YouTube insert failed: {resp.text}")
+                logger.error(f"✗ YouTube insert failed: {resp.text}")
                 return False
         except Exception as e:
-            print(f"Error inserting streams: {str(e)}")
+            logger.error(f"✗ Error inserting streams: {str(e)}")
             return False
 
     def process_youtube_request(self, chat_id, channel_id):
-        print(f"Processing YouTube request: chat_id={chat_id}, channel_id={channel_id}")
+        logger.info(
+            f"Processing YouTube request: chat_id={chat_id}, channel_id={channel_id}"
+        )
 
         try:
             streams_data = self.get_live_streams(chat_id, channel_id)
             if "error" in streams_data:
-                print(f"Stream error: {streams_data['error']}")
+                logger.error(f"Stream error: {streams_data['error']}")
                 return False
 
             success = self.insert_yt_streams_to_supabase(streams_data)
             if success:
-                print(
-                    f"YouTube processing complete for chat_id={chat_id}, channel_id={channel_id}"
+                logger.info(
+                    f"✓ YouTube processing complete for chat_id={chat_id}, channel_id={channel_id}"
                 )
                 return True
             else:
-                print(
-                    f"YouTube processing failed for chat_id={chat_id}, channel_id={channel_id}"
+                logger.error(
+                    f"✗ YouTube processing failed for chat_id={chat_id}, channel_id={channel_id}"
                 )
                 return False
         except Exception as e:
-            print(f"Exception during YouTube processing: {str(e)}")
+            logger.error(f"✗ Exception during YouTube processing: {str(e)}")
             return False
 
     def start_background_processor(self):
         if self.processing:
+            logger.warning("Background processor already running")
             return
         self.processing = True
 
         def worker():
-            print("YouTube background processor started")
+            logger.info("YouTube background processor started")
             while self.processing:
                 try:
                     item = youtube_queue.get(timeout=1)
@@ -208,12 +240,13 @@ class YouTubeStreamProcessor:
                 except queue.Empty:
                     continue
                 except Exception as e:
-                    print(f"Background error: {str(e)}")
-            print("YouTube background processor stopped")
+                    logger.error(f"Background processing error: {str(e)}")
+            logger.info("YouTube background processor stopped")
 
         threading.Thread(target=worker, daemon=True).start()
 
     def stop_background_processor(self):
+        logger.info("Stopping background processor...")
         self.processing = False
 
     def add_to_queue(self, chat_id, channel_id, delay=5):
@@ -225,9 +258,12 @@ class YouTubeStreamProcessor:
                     "timestamp": datetime.now().isoformat(),
                 }
             )
-            print(f"Added to YouTube queue: chat_id={chat_id}, channel_id={channel_id}")
+            logger.info(
+                f"Added to YouTube queue: chat_id={chat_id}, channel_id={channel_id}"
+            )
 
         threading.Timer(delay, delayed_add).start()
+        logger.info(f"Scheduled YouTube processing in {delay} seconds")
 
 
 # Global instance
@@ -248,15 +284,15 @@ def stop_youtube_processor():
 
 
 def process_youtube_request(chat_id, channel_id):
-    processor.process_youtube_request(chat_id, channel_id)
+    return processor.process_youtube_request(chat_id, channel_id)
 
 
 if __name__ == "__main__":
     processor = initialize_youtube_processor()
     NIGHTBOT_CHATID = "your_nightbot_chatid_here"
     CHANNEL_ID = "UCrYHJXK4bR9oqEet6St6sWA"
-    print("Testing YouTube processor with direct call...")
+    logger.info("Testing YouTube processor with direct call...")
     result = processor.process_youtube_request(NIGHTBOT_CHATID, CHANNEL_ID)
-    print(f"Result: {result}")
+    logger.info(f"Result: {result}")
     time.sleep(10)
-    print("Done.")
+    logger.info("Done.")
