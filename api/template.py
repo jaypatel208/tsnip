@@ -8,6 +8,9 @@ CHANNEL_TEMPLATES = {
         "Clipped by {user} (with a -{delay}s delay){title_part}. Tool used: {tool_used}. "
         "Timestamps will be added in the comments after the stream ends ❤🎬"
     ),
+    "UCRj_BU95SebaRi2FziXEoTg": (
+        "Timestamp '{title}' with a delay of 42 seconds was captured by {user} using Tsnip."
+    ),
 }
 
 
