@@ -1,6 +1,7 @@
 import os
 import requests
 import time
+import re
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
@@ -192,6 +193,15 @@ def mark_video_as_processed(row_id, stream_start_time, success=True):
         print(f"✗ Error updating database for video {row_id}: {e}")
 
 
+def remove_member_emojis(text):
+    """Remove channel member emojis from text"""
+    if not text:
+        return text
+    # Remove custom emoji patterns like :_EmojiName:
+    cleaned = re.sub(r":_[^:]+:", "", text)
+    return cleaned.strip()
+
+
 def handler():
     """Main handler function"""
     print("Starting YouTube comment processing...")
@@ -229,6 +239,10 @@ def handler():
             message = m.get("message", "").strip()
             user = m["user_name"]
 
+            # Clean member emojis from message and user name
+            message = remove_member_emojis(message)
+            user = remove_member_emojis(user)
+
             if message:
                 lines.append(f"{timestamp} | {message} | {user}")
             else:
@@ -237,6 +251,9 @@ def handler():
         comment_body = (
             "Time stamps:\n\n" + "\n".join(lines) + "\n\nThank you for using Tsnip."
         )
+
+        # Final cleanup of the entire comment body
+        comment_body = remove_member_emojis(comment_body)
 
         print(f"Comment length: {len(comment_body)} characters")
 
