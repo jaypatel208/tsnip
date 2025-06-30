@@ -193,12 +193,14 @@ def mark_video_as_processed(row_id, stream_start_time, success=True):
         print(f"✗ Error updating database for video {row_id}: {e}")
 
 
-def remove_member_emojis(text):
-    """Remove channel member emojis from text"""
+def clean_text(text):
+    """Remove channel member emojis and @ symbols from text"""
     if not text:
         return text
     # Remove custom emoji patterns like :_EmojiName:
     cleaned = re.sub(r":_[^:]+:", "", text)
+    # Remove @ symbols from usernames
+    cleaned = cleaned.replace("@", "")
     return cleaned.strip()
 
 
@@ -239,9 +241,9 @@ def handler():
             message = m.get("message", "").strip()
             user = m["user_name"]
 
-            # Clean member emojis from message and user name
-            message = remove_member_emojis(message)
-            user = remove_member_emojis(user)
+            # Clean member emojis and @ symbols from message and user name
+            message = clean_text(message)
+            user = clean_text(user)
 
             if message:
                 lines.append(f"{timestamp} | {message} | {user}")
@@ -253,7 +255,7 @@ def handler():
         )
 
         # Final cleanup of the entire comment body
-        comment_body = remove_member_emojis(comment_body)
+        comment_body = clean_text(comment_body)
 
         print(f"Comment length: {len(comment_body)} characters")
 
