@@ -83,23 +83,61 @@ def format_timestamp(start_time_str, user_time_str, delay):
 
 
 def is_video_ready_for_comments(video_id):
-    """Check if video is public and ready for comments"""
+    """Check if video is public and ready for comments, including member-only detection"""
     try:
-        url = f"https://www.googleapis.com/youtube/v3/videos?part=status,statistics&id={video_id}&key={YT_DATA_API_V3}"
+        url = f"https://www.googleapis.com/youtube/v3/videos?part=status,statistics,snippet&id={video_id}&key={YT_DATA_API_V3}"
         resp = requests.get(url)
         if resp.status_code == 200:
             items = resp.json().get("items", [])
             if items:
-                status = items[0].get("status", {})
+                video_data = items[0]
+                status = video_data.get("status", {})
+                snippet = video_data.get("snippet", {})
+
                 is_public = status.get("privacyStatus") == "public"
                 comments_disabled = status.get("madeForKids", False)
-                print(
-                    f"Video {video_id} - Public: {is_public}, Comments disabled: {comments_disabled}"
+
+                # Check for member-only video indicators
+                title = snippet.get("title", "").lower()
+                description = snippet.get("description", "").lower()
+
+                # Common indicators of member-only content
+                member_indicators = [
+                    "members only",
+                    "member only",
+                    "members-only",
+                    "member-only",
+                    "membership",
+                    "members stream",
+                    "member stream",
+                ]
+
+                is_member_only = any(
+                    indicator in title or indicator in description
+                    for indicator in member_indicators
                 )
-                return is_public and not comments_disabled
+
+                print(
+                    f"Video {video_id} - Public: {is_public}, Comments disabled: {comments_disabled}, Member-only: {is_member_only}"
+                )
+
+                return {
+                    "can_comment": is_public
+                    and not comments_disabled
+                    and not is_member_only,
+                    "is_member_only": is_member_only,
+                    "is_public": is_public,
+                    "comments_disabled": comments_disabled,
+                }
     except Exception as e:
         print(f"Error checking video status for {video_id}: {e}")
-    return False
+
+    return {
+        "can_comment": False,
+        "is_member_only": False,
+        "is_public": False,
+        "comments_disabled": True,
+    }
 
 
 def post_comment_with_retry(video_id, comment_body, max_retries=3, delay=60):
@@ -111,7 +149,15 @@ def post_comment_with_retry(video_id, comment_body, max_retries=3, delay=60):
             )
 
             # Check if video is ready for comments
-            if not is_video_ready_for_comments(video_id):
+            video_status = is_video_ready_for_comments(video_id)
+
+            if video_status["is_member_only"]:
+                print(
+                    f"Video {video_id} is member-only - skipping comment but marking as processed"
+                )
+                return "member_only"
+
+            if not video_status["can_comment"]:
                 print(f"Video {video_id} not ready for comments yet")
                 if attempt < max_retries - 1:
                     print(f"Waiting {delay} seconds before retry...")
@@ -142,15 +188,22 @@ def post_comment_with_retry(video_id, comment_body, max_retries=3, delay=60):
             error_msg = str(e)
             print(f"✗ Attempt {attempt + 1} failed for video {video_id}: {error_msg}")
 
-            # Check for specific error types
-            if "commentsDisabled" in error_msg:
-                print(f"Comments are disabled for video {video_id}")
-                return False
+            # Check for specific error types that indicate member-only content
+            if any(
+                indicator in error_msg.lower()
+                for indicator in [
+                    "commentsDisabled",
+                    "forbidden",
+                    "insufficientPermissions",
+                    "channelSubscriptionRequired",
+                ]
+            ):
+                print(
+                    f"Video {video_id} appears to be member-only or comments disabled - skipping"
+                )
+                return "member_only"
             elif "quotaExceeded" in error_msg:
                 print("YouTube API quota exceeded")
-                return False
-            elif "forbidden" in error_msg.lower():
-                print(f"Forbidden error - check permissions for video {video_id}")
                 return False
 
             if attempt < max_retries - 1:
@@ -162,7 +215,7 @@ def post_comment_with_retry(video_id, comment_body, max_retries=3, delay=60):
     return False
 
 
-def mark_video_as_processed(row_id, stream_start_time, success=True):
+def mark_video_as_processed(row_id, stream_start_time, success=True, status="ended"):
     """Mark video as processed with success status"""
     if isinstance(stream_start_time, str):
         stream_start_time = datetime.fromisoformat(
@@ -178,15 +231,15 @@ def mark_video_as_processed(row_id, stream_start_time, success=True):
     }
 
     data = {
-        "marked": success,  # Only mark as true if successful
-        "status": "ended" if success else "failed",
+        "marked": success,
+        "status": status,
         "stream_start_time": stream_start_time_str,
     }
 
     try:
         resp = requests.patch(url, headers=headers, json=data)
         if resp.status_code == 200:
-            print(f"✓ Database updated for video {row_id}")
+            print(f"✓ Database updated for video {row_id} with status: {status}")
         else:
             print(f"✗ Failed to update database for video {row_id}: {resp.text}")
     except Exception as e:
@@ -260,10 +313,20 @@ def handler():
         print(f"Comment length: {len(comment_body)} characters")
 
         # Post comment with retry logic
-        if post_comment_with_retry(video_id, comment_body):
-            mark_video_as_processed(uuid, start_time, success=True)
+        result = post_comment_with_retry(video_id, comment_body)
+
+        if result == True:
+            # Successfully posted comment
+            mark_video_as_processed(uuid, start_time, success=True, status="ended")
             print(f"✓ Successfully processed video {video_id}")
+        elif result == "member_only":
+            # Member-only video, skip comment but mark as processed
+            mark_video_as_processed(
+                uuid, start_time, success=True, status="member_only"
+            )
+            print(f"✓ Skipped member-only video {video_id} and marked as processed")
         else:
+            # Failed to post comment
             print(f"✗ Failed to process video {video_id} - will retry later")
             # Don't mark as processed, so it will be retried next time
 
