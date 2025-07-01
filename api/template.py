@@ -9,7 +9,7 @@ CHANNEL_TEMPLATES = {
         "Timestamps will be added in the comments after the stream ends ❤🎬"
     ),
     "UCRj_BU95SebaRi2FziXEoTg": (
-        "Timestamp {title_part} with a delay of -{delay}s seconds was captured by {user} using Tsnip."
+        "Timestamp {title_part} with a delay of -{delay}s was captured by {user} using Tsnip."
     ),
 }
 
