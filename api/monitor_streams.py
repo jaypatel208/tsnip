@@ -328,7 +328,7 @@ def handler():
         else:
             # Failed to post comment
             print(f"✗ Failed to process video {video_id} - will retry later")
-            # Don't mark as processed, so it will be retried next time
+            # Don't mark as processed, so it will be retried next time -
 
     print("\nProcessing complete!")
 
