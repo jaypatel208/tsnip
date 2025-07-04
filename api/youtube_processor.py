@@ -91,6 +91,7 @@ class YouTubeStreamProcessor:
                                 "status": event_type,
                                 "url": f"https://www.youtube.com/watch?v={video_id}",
                                 "channel": channel_name,
+                                "channel_id": channel_id,
                             }
                         )
 
@@ -167,6 +168,7 @@ class YouTubeStreamProcessor:
                         "status": stream["status"],
                         "url": stream["url"],
                         "channel": stream["channel"],
+                        "channel_id": stream["channel_id"],
                         "marked": False,
                     }
                 )
