@@ -133,12 +133,16 @@ def send_discord_message(
     # Convert timestamp to seconds for YouTube URL
     seconds = timestamp_to_seconds(timestamp)
     youtube_url = f"https://www.youtube.com/watch?v={video_id}&t={seconds}s"
+    
+    # YouTube thumbnail URL - using maxresdefault for best quality
+    thumbnail_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
     # Create Discord embed
     embed = {
         "title": f"📺 {video_title}",
         "url": youtube_url,
         "color": 0xFF0000,  # Red color like YouTube
+        "thumbnail": {"url": thumbnail_url},  # Add thumbnail
         "fields": [
             {"name": "⏰ Timestamp", "value": timestamp, "inline": True},
             {"name": "👤 Captured by", "value": username, "inline": True},
