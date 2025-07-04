@@ -198,48 +198,6 @@ def clip_handler():
     return Response(comment, mimetype="text/plain")
 
 
-@app.route("/api/health", methods=["GET"])
-def health_check():
-    return {
-        "status": "healthy",
-        "youtube_processor": "initialized" if youtube_processor else "not initialized",
-        "youtube_module": (
-            "available" if youtube_processor_available else "not available"
-        ),
-    }
-
-
-@app.route("/api/youtube/manual-process", methods=["POST"])
-def manual_youtube_process():
-    if not youtube_processor_available:
-        return {"error": "YouTube processor module not available"}, 503
-
-    data = request.get_json() or {}
-    chat_id = data.get("chat_id") or request.args.get("chatId")
-    channel_id = data.get("channel_id") or request.args.get("channelId")
-
-    if not chat_id or not channel_id:
-        return {"error": "Missing chat_id or channel_id"}, 400
-
-    processor = ensure_youtube_processor_initialized()
-    if not processor:
-        return {"error": "YouTube processor could not be initialized"}, 500
-
-    try:
-        print(f"Manual YouTube processing for channel: {channel_id}, chat: {chat_id}")
-        success = processor.process_youtube_request(chat_id, channel_id)
-        if success:
-            return {
-                "message": "YouTube processing completed",
-                "chat_id": chat_id,
-                "channel_id": channel_id,
-            }
-        else:
-            return {"error": "YouTube processing failed"}, 500
-    except Exception as e:
-        return {"error": str(e)}, 500
-
-
 @app.route("/api/monitor-streams", methods=["GET", "POST"])
 def cron_monitor_streams():
     secret = request.args.get("secret") or request.headers.get("X-Cron-Secret")

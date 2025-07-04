@@ -20,7 +20,7 @@ YT_DATA_API_V3 = os.getenv("YT_DATA_API_V3")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN")
-DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")  # Add this to your .env file
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 
 def get_youtube_client():
@@ -133,14 +133,14 @@ def send_discord_message(
     # Convert timestamp to seconds for YouTube URL
     seconds = timestamp_to_seconds(timestamp)
     youtube_url = f"https://www.youtube.com/watch?v={video_id}&t={seconds}s"
-    
+
     # YouTube thumbnail URL - using maxresdefault for best quality
     thumbnail_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
     # Create Discord embed
     # Use message as title if provided, otherwise use video title
     embed_title = message.strip() if message.strip() else f"📺 {video_title}"
-    
+
     embed = {
         "title": embed_title,
         "url": youtube_url,
