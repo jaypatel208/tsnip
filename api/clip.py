@@ -12,6 +12,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
+SUPABASE_YT_CHANNEL_TABLE = os.getenv("SUPABASE_YT_CHANNEL_TABLE")
 TOOL_USED = os.getenv("TOOL_USED")
 CRON_SECRET = os.getenv("CRON_SECRET")
 
@@ -120,7 +121,7 @@ def get_comment_template(channel_id):
 
     try:
         response = requests.get(
-            f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?channel_id=eq.{channel_id}&select=channel_template",
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_CHANNEL_TABLE}?channel_id=eq.{channel_id}&select=channel_template",
             headers=headers,
             timeout=10,
         )
