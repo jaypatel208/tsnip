@@ -79,6 +79,35 @@ After your live stream ends, within **2 minutes** our bot will automatically com
 
 ---
 
+## 🔥 Discord Integration Feature
+
+### 📨 Send Timestamps to Discord Channel
+
+Tsnip now supports sending timestamps directly to your Discord channel! When this feature is enabled, timestamp messages will be sent to your designated Discord channel like this:
+
+<div align="center">
+  <img src="assets/dc_message.png" alt="Discord Message Example" width="227"/>
+</div>
+
+### 🚨 Important Notes About Discord Integration
+
+> ⚠️ **This feature is NOT enabled by default**
+
+To add Discord integration to your channel:
+
+1. **Contact the Developer** on Discord: `jd.208`
+2. **Provide your Discord server details** and channel information
+3. **Wait for approval** and integration setup
+4. **Feature will be activated** after discussion with the developer
+
+**Why contact is required:**
+- Custom setup needed for each Discord server
+- Ensures proper permissions and security
+- Prevents spam and unauthorized usage
+- Maintains service quality and stability
+
+---
+
 ## 🌟 Trusted by Creators
 
 <div align="center">
@@ -179,6 +208,8 @@ Got questions, suggestions, or need help? Reach out to us:
 - **📧 Email**: [workbyjd@gmail.com](mailto:workbyjd@gmail.com)
 - **💬 Discord**: `jd.208`
 - **💼 LinkedIn**: [jaypatel208](https://www.linkedin.com/in/jaypatel208/)
+
+*For Discord integration requests, please contact via Discord: `jd.208`*
 
 ---
 
