@@ -338,7 +338,7 @@ def mark_video_as_processed(row_id, stream_start_time, success=True, status="end
 
     try:
         resp = requests.patch(url, headers=headers, json=data)
-        if resp.status_code == 200:
+        if resp.status_code in [200, 204]:
             print(f"✓ Database updated for video {row_id} with status: {status}")
         else:
             print(f"✗ Failed to update database for video {row_id}: {resp.text}")
