@@ -5,12 +5,6 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from api.monitor_streams import handler as monitor_handler
 
-# Updated import to handle both local and Vercel/package contexts
-try:
-    from .template import get_comment_template, template_exists
-except ImportError:
-    from template import get_comment_template, template_exists
-
 # Load environment variables
 load_dotenv()
 
@@ -20,6 +14,11 @@ SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 TOOL_USED = os.getenv("TOOL_USED")
 CRON_SECRET = os.getenv("CRON_SECRET")
+
+DEFAULT_TEMPLATE = (
+    "Timestamped (with a -{delay}s delay) by {user}{title_part}. "
+    "All timestamps get commented after the stream ends. Tool used: {tool_used}"
+)
 
 app = Flask(__name__)
 
@@ -113,6 +112,29 @@ def insert_to_supabase(channelid, chat_id, delay, message, user, user_timestamp)
     return True
 
 
+def get_comment_template(channel_id):
+    headers = {
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}",
+    }
+
+    try:
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?channel_id=eq.{channel_id}&select=channel_template",
+            headers=headers,
+            timeout=10,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if data and data[0]["channel_template"]:
+                return data[0]["channel_template"], True
+    except Exception as e:
+        print(f"Error fetching template from Supabase: {e}")
+
+    return DEFAULT_TEMPLATE, False
+
+
 @app.route("/api/clip", methods=["GET", "POST"])
 def clip_handler():
     user = request.args.get("user") or request.form.get("user")
@@ -140,42 +162,38 @@ def clip_handler():
     success = insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
     if not success:
-        error_response = "Error: Failed to save timestamp. Please try again."
-        return Response(error_response, mimetype="text/plain", status=500)
+        return Response(
+            "Error: Failed to save timestamp. Please try again.",
+            mimetype="text/plain",
+            status=500,
+        )
 
-    if success:
-        if not check_chat_id_exists(chat_id):
-            print(
-                f"Chat ID {chat_id} not found in YT table, attempting YouTube processing..."
-            )
-
-            processor = ensure_youtube_processor_initialized()
-            if processor:
-                print(
-                    f"Processing YouTube request immediately for channel: {channel_id}, chat: {chat_id}"
-                )
-                try:
-                    yt_success = processor.process_youtube_request(chat_id, channel_id)
-                    if yt_success:
-                        print("YouTube processing completed successfully")
-                    else:
-                        print("YouTube processing failed during execution")
-                except Exception as e:
-                    print(f"Error during YouTube processing: {str(e)}")
-            else:
-                print("YouTube processor could not be initialized")
-        else:
-            print(f"Chat ID {chat_id} already exists in YT table, skipping processing")
+    if not check_chat_id_exists(chat_id):
+        print(
+            f"Chat ID {chat_id} not found in YT table, attempting YouTube processing..."
+        )
+        processor = ensure_youtube_processor_initialized()
+        if processor:
+            try:
+                yt_success = processor.process_youtube_request(chat_id, channel_id)
+                if yt_success:
+                    print("YouTube processing completed successfully")
+                else:
+                    print("YouTube processing failed")
+            except Exception as e:
+                print(f"Error during YouTube processing: {str(e)}")
+    else:
+        print(f"Chat ID {chat_id} already exists, skipping YouTube processing")
 
     title_part = f" — titled '{msg}'" if msg else ""
-    template = get_comment_template(channel_id)
+    template, is_custom = get_comment_template(channel_id)
 
     comment = template.format(
         user=user, delay=delay, title_part=title_part, tool_used=TOOL_USED
     )
 
     print(
-        f"Using template for channel {channel_id}: {'custom' if template_exists(channel_id) else 'default'}"
+        f"Using template for channel {channel_id}: {'custom' if is_custom else 'default'}"
     )
 
     return Response(comment, mimetype="text/plain")
@@ -183,13 +201,12 @@ def clip_handler():
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    processor_status = "initialized" if youtube_processor else "not initialized"
-    module_status = "available" if youtube_processor_available else "not available"
-
     return {
         "status": "healthy",
-        "youtube_processor": processor_status,
-        "youtube_module": module_status,
+        "youtube_processor": "initialized" if youtube_processor else "not initialized",
+        "youtube_module": (
+            "available" if youtube_processor_available else "not available"
+        ),
     }
 
 
@@ -210,9 +227,7 @@ def manual_youtube_process():
         return {"error": "YouTube processor could not be initialized"}, 500
 
     try:
-        print(
-            f"Manual YouTube processing triggered for channel: {channel_id}, chat: {chat_id}"
-        )
+        print(f"Manual YouTube processing for channel: {channel_id}, chat: {chat_id}")
         success = processor.process_youtube_request(chat_id, channel_id)
         if success:
             return {
@@ -223,7 +238,6 @@ def manual_youtube_process():
         else:
             return {"error": "YouTube processing failed"}, 500
     except Exception as e:
-        print(f"Exception in manual processing: {str(e)}")
         return {"error": str(e)}, 500
 
 
