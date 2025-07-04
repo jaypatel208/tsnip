@@ -15,10 +15,12 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
+SUPABASE_YT_CHANNEL_TABLE = os.getenv("SUPABASE_YT_CHANNEL_TABLE")
 YT_DATA_API_V3 = os.getenv("YT_DATA_API_V3")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN")
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")  # Add this to your .env file
 
 
 def get_youtube_client():
@@ -35,13 +37,28 @@ def get_youtube_client():
 
 
 def get_unmarked_streams():
-    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?marked=eq.false&select=video_id,id,chat_id"
+    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?marked=eq.false&select=video_id,id,chat_id,channel_id"
     headers = {
         "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
     }
     resp = requests.get(url, headers=headers)
     return resp.json() if resp.status_code == 200 else []
+
+
+def get_discord_channel_id(channel_id):
+    """Get Discord channel ID for a YouTube channel"""
+    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_CHANNEL_TABLE}?channel_id=eq.{channel_id}&select=dc_channel_id"
+    headers = {
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}",
+    }
+    resp = requests.get(url, headers=headers)
+    if resp.status_code == 200:
+        data = resp.json()
+        if data and data[0].get("dc_channel_id"):
+            return data[0]["dc_channel_id"]
+    return None
 
 
 def get_stream_times(video_id):
@@ -55,6 +72,17 @@ def get_stream_times(video_id):
 
     details = items[0].get("liveStreamingDetails", {})
     return details.get("actualStartTime"), details.get("actualEndTime")
+
+
+def get_video_title(video_id):
+    """Get video title from YouTube API"""
+    url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YT_DATA_API_V3}"
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        items = resp.json().get("items", [])
+        if items:
+            return items[0].get("snippet", {}).get("title", "Unknown Title")
+    return "Unknown Title"
 
 
 def get_chat_messages(chat_id):
@@ -80,6 +108,81 @@ def format_timestamp(start_time_str, user_time_str, delay):
         if hours
         else f"{minutes:02}:{seconds:02}"
     )
+
+
+def timestamp_to_seconds(timestamp):
+    """Convert timestamp (HH:MM:SS or MM:SS) to seconds"""
+    parts = timestamp.split(":")
+    if len(parts) == 2:  # MM:SS
+        minutes, seconds = map(int, parts)
+        return minutes * 60 + seconds
+    elif len(parts) == 3:  # HH:MM:SS
+        hours, minutes, seconds = map(int, parts)
+        return hours * 3600 + minutes * 60 + seconds
+    return 0
+
+
+def send_discord_message(
+    discord_channel_id, video_id, video_title, timestamp, message, username
+):
+    """Send individual timestamp to Discord channel"""
+    if not DISCORD_BOT_TOKEN:
+        print("Discord bot token not configured")
+        return False
+
+    # Convert timestamp to seconds for YouTube URL
+    seconds = timestamp_to_seconds(timestamp)
+    youtube_url = f"https://www.youtube.com/watch?v={video_id}&t={seconds}s"
+
+    # Create Discord embed
+    embed = {
+        "title": f"📺 {video_title}",
+        "url": youtube_url,
+        "color": 0xFF0000,  # Red color like YouTube
+        "fields": [
+            {"name": "⏰ Timestamp", "value": timestamp, "inline": True},
+            {"name": "👤 Captured by", "value": username, "inline": True},
+        ],
+        "footer": {"text": "Tsnip • Click title to watch at this moment"},
+    }
+
+    # Add message field if there's a message
+    if message.strip():
+        embed["fields"].insert(
+            0,
+            {
+                "name": "💬 Message",
+                "value": message[:1000],  # Discord field limit
+                "inline": False,
+            },
+        )
+
+    payload = {"embeds": [embed]}
+
+    headers = {
+        "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            f"https://discord.com/api/v10/channels/{discord_channel_id}/messages",
+            json=payload,
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            print(f"✓ Sent Discord message for timestamp {timestamp}")
+            return True
+        else:
+            print(
+                f"✗ Failed to send Discord message: {response.status_code} - {response.text}"
+            )
+            return False
+
+    except Exception as e:
+        print(f"✗ Error sending Discord message: {e}")
+        return False
 
 
 def is_video_ready_for_comments(video_id):
@@ -271,8 +374,16 @@ def handler():
         video_id = row["video_id"]
         uuid = row["id"]
         chat_id = row["chat_id"]
+        channel_id = row["channel_id"]
 
         print(f"\n[{i}/{len(unmarked_streams)}] Processing video {video_id}")
+
+        # Check if this channel has Discord integration
+        discord_channel_id = get_discord_channel_id(channel_id)
+        if discord_channel_id:
+            print(f"✓ Discord integration found for channel {channel_id}")
+        else:
+            print(f"⚠ No Discord integration for channel {channel_id}")
 
         # Get stream times
         start_time, end_time = get_stream_times(video_id)
@@ -282,6 +393,10 @@ def handler():
 
         print(f"Stream times: {start_time} to {end_time}")
 
+        # Get video title for Discord embeds
+        video_title = get_video_title(video_id)
+        print(f"Video title: {video_title}")
+
         # Get chat messages
         messages = get_chat_messages(chat_id)
         if not messages:
@@ -290,8 +405,10 @@ def handler():
 
         print(f"Found {len(messages)} chat messages")
 
-        # Format timestamps
+        # Format timestamps and send to Discord
         lines = []
+        discord_sent_count = 0
+
         for m in messages:
             timestamp = format_timestamp(start_time, m["user_timestamp"], m["delay"])
             message = m.get("message", "").strip()
@@ -301,11 +418,27 @@ def handler():
             message = remove_custom_emojis(message)
             user = remove_at_symbol(user)
 
+            # Add to comment lines
             if message:
                 lines.append(f"{timestamp} – _{message}_ (by {user})")
             else:
                 lines.append(f"{timestamp} – (by {user})")
 
+            # Send to Discord if configured
+            if discord_channel_id:
+                success = send_discord_message(
+                    discord_channel_id, video_id, video_title, timestamp, message, user
+                )
+                if success:
+                    discord_sent_count += 1
+
+                # Rate limit: wait 1 second between Discord messages
+                time.sleep(1)
+
+        if discord_channel_id and discord_sent_count > 0:
+            print(f"✓ Sent {discord_sent_count} messages to Discord channel")
+
+        # Post YouTube comment
         comment_body = (
             "Time stamps:\n\n" + "\n".join(lines) + "\n\nThank you for using Tsnip."
         )
@@ -328,7 +461,7 @@ def handler():
         else:
             # Failed to post comment
             print(f"✗ Failed to process video {video_id} - will retry later")
-            # Don't mark as processed, so it will be retried next time -
+            # Don't mark as processed, so it will be retried next time
 
     print("\nProcessing complete!")
 
