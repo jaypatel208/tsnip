@@ -156,9 +156,7 @@ def clip_handler():
         )
         return Response(error_response, mimetype="text/plain", status=400)
 
-    server_time = datetime.now(timezone.utc)
-    user_time = server_time - timedelta(seconds=delay)
-    user_timestamp = user_time.isoformat()
+    user_timestamp = datetime.now(timezone.utc).isoformat()
 
     success = insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
