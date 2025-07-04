@@ -138,28 +138,21 @@ def send_discord_message(
     thumbnail_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
     # Create Discord embed
+    # Use message as title if provided, otherwise use video title
+    embed_title = message.strip() if message.strip() else f"📺 {video_title}"
+    
     embed = {
-        "title": f"📺 {video_title}",
+        "title": embed_title,
         "url": youtube_url,
         "color": 0xFF0000,  # Red color like YouTube
         "thumbnail": {"url": thumbnail_url},  # Add thumbnail
         "fields": [
+            {"name": "🎬 Video", "value": video_title, "inline": False},
             {"name": "⏰ Timestamp", "value": timestamp, "inline": True},
             {"name": "👤 Captured by", "value": username, "inline": True},
         ],
         "footer": {"text": "Tsnip • Click title to watch at this moment"},
     }
-
-    # Add message field if there's a message
-    if message.strip():
-        embed["fields"].insert(
-            0,
-            {
-                "name": "💬 Message",
-                "value": message[:1000],  # Discord field limit
-                "inline": False,
-            },
-        )
 
     payload = {"embeds": [embed]}
 
