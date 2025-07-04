@@ -2,8 +2,9 @@ from flask import Flask, request, Response, jsonify
 import requests
 import os
 from dotenv import load_dotenv
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from api.monitor_streams import handler as monitor_handler
+import logging
 
 # Load environment variables
 load_dotenv()
@@ -15,11 +16,17 @@ SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
 SUPABASE_YT_CHANNEL_TABLE = os.getenv("SUPABASE_YT_CHANNEL_TABLE")
 TOOL_USED = os.getenv("TOOL_USED")
 CRON_SECRET = os.getenv("CRON_SECRET")
+CRON_SECRET_DC_KEEP_ALIVE = os.getenv("CRON_SECRET_DC_KEEP_ALIVE")
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 DEFAULT_TEMPLATE = (
-    "Timestamped (with a -{delay}s delay) by {user}{title_part}. "
+    "Timestamped (with a -{delay}s delay) by {user}{title_part}."
     "All timestamps get commented after the stream ends. Tool used: {tool_used}"
 )
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -209,6 +216,80 @@ def cron_monitor_streams():
         return jsonify({"message": "Stream monitoring executed successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dc-keepalive", methods=["GET", "POST"])
+def discord_keepalive():
+    # Log the incoming request
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    logger.info(f"Keepalive request from {client_ip}")
+
+    if not CRON_SECRET_DC_KEEP_ALIVE:
+        logger.error("Cron secret not configured")
+        return (
+            jsonify({"status": "error", "message": "Cron secret not configured"}),
+            500,
+        )
+
+    provided_secret = request.args.get("secret") or request.headers.get("X-Cron-Secret")
+
+    if provided_secret != CRON_SECRET_DC_KEEP_ALIVE:
+        logger.warning(f"Invalid secret attempt from {client_ip}")
+        return jsonify({"status": "error", "message": "Invalid or missing secret"}), 401
+
+    try:
+        start_time = datetime.now()
+
+        response = requests.get(
+            "https://discord.com/api/v10/users/@me",
+            headers={
+                "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+
+        end_time = datetime.now()
+        response_time = (end_time - start_time).total_seconds()
+
+        if response.status_code == 200:
+            bot_data = response.json()
+            logger.info(f"Keepalive successful for bot: {bot_data.get('username')}")
+
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "Discord bot keepalive successful",
+                    "bot_username": bot_data.get("username"),
+                    "bot_discriminator": bot_data.get("discriminator"),
+                    "response_time_ms": round(response_time * 1000, 2),
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+        else:
+            logger.warning(f"Discord API returned {response.status_code}")
+            return jsonify(
+                {
+                    "status": "warning",
+                    "message": f"Discord API returned {response.status_code}",
+                    "response_code": response.status_code,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
+    except Exception as e:
+        logger.error(f"Keepalive error: {e}")
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Keepalive failed",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ),
+            500,
+        )
 
 
 if __name__ == "__main__":
