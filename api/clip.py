@@ -328,53 +328,53 @@ def insert_to_supabase(channelid, chat_id, delay, message, user, user_timestamp)
             logger.error(f"Supabase insert failed: {response.text}")
             return False
 
-        # If insert successful, send immediate Discord notification
-        discord_channel_id = get_discord_channel_id(channelid)
-        if discord_channel_id:
-            logger.info(f"✓ Discord channel found for YouTube channel {channelid}")
-
-            # Try to get current live stream info including start time from DB
-            video_id, video_title, stream_start_time = get_live_stream_info(channelid)
-
-            # Calculate timestamp if we have stream info
-            timestamp = None
-            if video_id and stream_start_time:
-                timestamp = format_timestamp(stream_start_time, user_timestamp, delay)
-                logger.info(f"✓ Calculated timestamp: {timestamp}")
-            elif video_id:
-                logger.warning(
-                    f"⚠ Stream found but no start time available in DB for video {video_id}"
-                )
-            else:
-                logger.warning(f"⚠ No active stream found for channel {channelid}")
-
-            # Clean username (remove @ symbol)
-            clean_user = user.lstrip("@") if user else "Unknown"
-
-            # Send immediate notification with timestamp
-            discord_success = send_discord_message_immediate(
-                discord_channel_id,
-                video_id,
-                video_title,
-                message,
-                clean_user,
-                timestamp,
-            )
-
-            if discord_success:
-                logger.info("✓ Immediate Discord notification sent successfully")
-            else:
-                logger.error("✗ Failed to send immediate Discord notification")
-        else:
-            logger.warning(
-                f"⚠ No Discord integration found for YouTube channel {channelid}"
-            )
-
         return True
 
     except Exception as e:
         logger.error(f"Error in insert_to_supabase: {e}")
         return False
+
+
+def send_discord_notification(channelid, message, user, user_timestamp, delay):
+    discord_channel_id = get_discord_channel_id(channelid)
+    if not discord_channel_id:
+        logger.warning(
+            f"⚠ No Discord integration found for YouTube channel {channelid}"
+        )
+        return False
+
+    logger.info(f"✓ Discord channel found for YouTube channel {channelid}")
+
+    video_id, video_title, stream_start_time = get_live_stream_info(channelid)
+
+    timestamp = None
+    if video_id and stream_start_time:
+        timestamp = format_timestamp(stream_start_time, user_timestamp, delay)
+        logger.info(f"✓ Calculated timestamp: {timestamp}")
+    elif video_id:
+        logger.warning(
+            f"⚠ Stream found but no start time available in DB for video {video_id}"
+        )
+    else:
+        logger.warning(f"⚠ No active stream found for channel {channelid}")
+
+    clean_user = user.lstrip("@") if user else "Unknown"
+
+    success = send_discord_message_immediate(
+        discord_channel_id,
+        video_id,
+        video_title,
+        message,
+        clean_user,
+        timestamp,
+    )
+
+    if success:
+        logger.info("✓ Immediate Discord notification sent successfully")
+    else:
+        logger.error("✗ Failed to send immediate Discord notification")
+
+    return success
 
 
 def get_comment_template(channel_id):
@@ -440,7 +440,7 @@ def clip_handler():
 
     user_timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Insert to Supabase (this will also handle Discord notification)
+    # Insert to Supabase
     success = insert_to_supabase(channel_id, chat_id, delay, msg, user, user_timestamp)
 
     if not success:
@@ -468,6 +468,9 @@ def clip_handler():
                 logger.error(f"Error during YouTube processing: {str(e)}")
     else:
         logger.info(f"Chat ID {chat_id} already exists, skipping YouTube processing")
+
+    # Send discord notificaion
+    send_discord_notification(channel_id, msg, user, user_timestamp, delay)
 
     title_part = f" — titled '{msg}'" if msg else ""
     template, is_custom = get_comment_template(channel_id)
