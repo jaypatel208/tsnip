@@ -190,19 +190,32 @@ def is_video_ready_for_comments(video_id):
         is_public = status.get("privacyStatus") == "public"
         comments_disabled = status.get("madeForKids", False)
 
-        # Check if this is a live stream
+        # Check if this is currently a live stream
         is_live = False
+        
+        # First check: liveBroadcastContent field (most reliable)
+        live_broadcast_content = snippet.get("liveBroadcastContent", "none")
+        if live_broadcast_content in ["live", "upcoming"]:
+            is_live = True
+            logger.info(f"Video {video_id} is {live_broadcast_content} - skipping for now")
+            return {
+                "can_comment": False,
+                "is_member_only": False,
+                "is_public": is_public,
+                "comments_disabled": False,
+                "is_live": True,
+                "live_status": live_broadcast_content,
+            }
+        
+        # Second check: liveStreamingDetails (only if currently live)
         if live_streaming_details:
-            # Check if it's currently live or was a live stream
             actual_start_time = live_streaming_details.get("actualStartTime")
             actual_end_time = live_streaming_details.get("actualEndTime")
 
-            # It's a live stream if it has live streaming details
-            is_live = True
-
-            # If it's currently live (no end time), we should wait
+            # Only consider it live if it has started but NOT ended
             if actual_start_time and not actual_end_time:
-                logger.info(f"Video {video_id} is currently live - skipping for now")
+                is_live = True
+                logger.info(f"Video {video_id} is currently live (no end time) - skipping for now")
                 return {
                     "can_comment": False,
                     "is_member_only": False,
@@ -212,48 +225,31 @@ def is_video_ready_for_comments(video_id):
                     "live_status": "live",
                 }
 
-        # Alternative check: look at the liveBroadcastContent field
-        live_broadcast_content = snippet.get("liveBroadcastContent", "none")
-        if live_broadcast_content in ["live", "upcoming"]:
-            is_live = True
-            logger.info(
-                f"Video {video_id} is {live_broadcast_content} - skipping for now"
-            )
-            return {
-                "can_comment": False,
-                "is_member_only": False,
-                "is_public": is_public,
-                "comments_disabled": False,
-                "is_live": True,
-                "live_status": live_broadcast_content,
-            }
-
-        # Only check for member-only indicators if it's not a live stream
+        # If we reach here, it's either a regular video or an ended live stream
+        # Check for member-only indicators
         is_member_only = False
-        if not is_live:
-            # Check for member-only video indicators
-            title = snippet.get("title", "").lower()
-            description = snippet.get("description", "").lower()
+        title = snippet.get("title", "").lower()
+        description = snippet.get("description", "").lower()
 
-            # Common indicators of member-only content
-            member_indicators = [
-                "members only",
-                "member only",
-                "members-only",
-                "member-only",
-                "membership",
-                "members stream",
-                "member stream",
-            ]
+        # Common indicators of member-only content
+        member_indicators = [
+            "members only",
+            "member only",
+            "members-only",
+            "member-only",
+            "membership",
+            "members stream",
+            "member stream",
+        ]
 
-            is_member_only = any(
-                indicator in title or indicator in description
-                for indicator in member_indicators
-            )
+        is_member_only = any(
+            indicator in title or indicator in description
+            for indicator in member_indicators
+        )
 
         logger.info(
             f"Video {video_id} - Public: {is_public}, Comments disabled: {comments_disabled}, "
-            f"Member-only: {is_member_only}, Is live: {is_live}"
+            f"Member-only: {is_member_only}, Is live: {is_live}, Broadcast content: {live_broadcast_content}"
         )
 
         return {
