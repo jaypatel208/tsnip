@@ -180,7 +180,7 @@ def get_live_stream_info(channel_id):
     try:
         # Get the most recent live stream for this channel that's not ended
         response = requests.get(
-            f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?channel_id=eq.{channel_id}&status=eq.live&order=created_at.desc&limit=1",
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_YT_TABLE}?channel_id=eq.{channel_id}&status=eq.live&limit=1",
             headers=headers,
             timeout=10,
         )
