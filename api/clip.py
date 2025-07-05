@@ -9,12 +9,8 @@ import logging
 # Load environment variables
 load_dotenv()
 
-# Set up logging - only use StreamHandler for serverless environments
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -573,11 +569,9 @@ def discord_keepalive():
             500,
         )
 
-
 @app.route("/health", methods=["GET"])
 def health_check():
     return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
-
 
 if __name__ == "__main__":
     logger.info(

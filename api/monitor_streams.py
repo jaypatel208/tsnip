@@ -13,7 +13,7 @@ from google.auth.transport.requests import Request
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
+    handlers=[logging.FileHandler("youtube_comments.log"), logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
