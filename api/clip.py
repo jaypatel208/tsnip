@@ -245,16 +245,9 @@ def send_discord_message_immediate(
 
     embed_fields = [
         {"name": "🎬 Stream", "value": video_title, "inline": False},
-        {
-            "name": "📝 Message",
-            "value": message if message else "No message",
-            "inline": False,
-        },
         {"name": "👤 Created by", "value": username, "inline": True},
+        {"name": "⏰ Timestamp", "value": timestamp, "inline": True},
     ]
-
-    # Add timestamp field
-    embed_fields.append({"name": "⏰ Timestamp", "value": timestamp, "inline": True})
 
     embed = {
         "title": embed_title,
