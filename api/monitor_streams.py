@@ -163,9 +163,9 @@ def format_timestamp(start_time_str, user_time_str, delay):
 
 
 def is_video_ready_for_comments(video_id):
-    """Check if video is public and ready for comments, including member-only detection"""
+    """Check if video is public and ready for comments, including live stream detection"""
     try:
-        url = f"https://www.googleapis.com/youtube/v3/videos?part=status,statistics,snippet&id={video_id}&key={YT_DATA_API_V3}"
+        url = f"https://www.googleapis.com/youtube/v3/videos?part=status,statistics,snippet,liveStreamingDetails&id={video_id}&key={YT_DATA_API_V3}"
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
 
@@ -179,44 +179,92 @@ def is_video_ready_for_comments(video_id):
                 "is_member_only": False,
                 "is_public": False,
                 "comments_disabled": True,
+                "is_live": False,
             }
 
         video_data = items[0]
         status = video_data.get("status", {})
         snippet = video_data.get("snippet", {})
+        live_streaming_details = video_data.get("liveStreamingDetails", {})
 
         is_public = status.get("privacyStatus") == "public"
         comments_disabled = status.get("madeForKids", False)
 
-        # Check for member-only video indicators
-        title = snippet.get("title", "").lower()
-        description = snippet.get("description", "").lower()
+        # Check if this is a live stream
+        is_live = False
+        if live_streaming_details:
+            # Check if it's currently live or was a live stream
+            actual_start_time = live_streaming_details.get("actualStartTime")
+            actual_end_time = live_streaming_details.get("actualEndTime")
 
-        # Common indicators of member-only content
-        member_indicators = [
-            "members only",
-            "member only",
-            "members-only",
-            "member-only",
-            "membership",
-            "members stream",
-            "member stream",
-        ]
+            # It's a live stream if it has live streaming details
+            is_live = True
 
-        is_member_only = any(
-            indicator in title or indicator in description
-            for indicator in member_indicators
-        )
+            # If it's currently live (no end time), we should wait
+            if actual_start_time and not actual_end_time:
+                logger.info(f"Video {video_id} is currently live - skipping for now")
+                return {
+                    "can_comment": False,
+                    "is_member_only": False,
+                    "is_public": is_public,
+                    "comments_disabled": False,
+                    "is_live": True,
+                    "live_status": "live",
+                }
+
+        # Alternative check: look at the liveBroadcastContent field
+        live_broadcast_content = snippet.get("liveBroadcastContent", "none")
+        if live_broadcast_content in ["live", "upcoming"]:
+            is_live = True
+            logger.info(
+                f"Video {video_id} is {live_broadcast_content} - skipping for now"
+            )
+            return {
+                "can_comment": False,
+                "is_member_only": False,
+                "is_public": is_public,
+                "comments_disabled": False,
+                "is_live": True,
+                "live_status": live_broadcast_content,
+            }
+
+        # Only check for member-only indicators if it's not a live stream
+        is_member_only = False
+        if not is_live:
+            # Check for member-only video indicators
+            title = snippet.get("title", "").lower()
+            description = snippet.get("description", "").lower()
+
+            # Common indicators of member-only content
+            member_indicators = [
+                "members only",
+                "member only",
+                "members-only",
+                "member-only",
+                "membership",
+                "members stream",
+                "member stream",
+            ]
+
+            is_member_only = any(
+                indicator in title or indicator in description
+                for indicator in member_indicators
+            )
 
         logger.info(
-            f"Video {video_id} - Public: {is_public}, Comments disabled: {comments_disabled}, Member-only: {is_member_only}"
+            f"Video {video_id} - Public: {is_public}, Comments disabled: {comments_disabled}, "
+            f"Member-only: {is_member_only}, Is live: {is_live}"
         )
 
         return {
-            "can_comment": is_public and not comments_disabled and not is_member_only,
+            "can_comment": is_public
+            and not comments_disabled
+            and not is_member_only
+            and not is_live,
             "is_member_only": is_member_only,
             "is_public": is_public,
             "comments_disabled": comments_disabled,
+            "is_live": is_live,
         }
 
     except requests.exceptions.RequestException as e:
@@ -229,6 +277,7 @@ def is_video_ready_for_comments(video_id):
         "is_member_only": False,
         "is_public": False,
         "comments_disabled": True,
+        "is_live": False,
     }
 
 
@@ -392,6 +441,26 @@ def process_single_video(row, video_index, total_videos):
 
         logger.info(f"[{video_index}/{total_videos}] Processing video {video_id}")
 
+        # Check if video is ready for comments
+        video_status = is_video_ready_for_comments(video_id)
+        
+        if video_status["is_live"]:
+            logger.info(f"Video {video_id} is still live or upcoming - skipping for now")
+            return False  # Don't mark as processed, will retry later
+        
+        if video_status["is_member_only"]:
+            # Member-only video, skip comment but mark as processed
+            if mark_video_as_processed(uuid, success=True, status="member_only"):
+                logger.info(f"Skipped member-only video {video_id} and marked as processed")
+                return True
+            else:
+                logger.error(f"Failed to mark member-only video {video_id} as processed in database")
+                return False
+        
+        if not video_status["can_comment"]:
+            logger.warning(f"Video {video_id} is not ready for comments - skipping")
+            return False
+
         # Get chat messages
         messages = get_chat_messages(chat_id)
         if not messages:
@@ -446,21 +515,7 @@ def process_single_video(row, video_index, total_videos):
                 logger.info(f"Successfully processed video {video_id}")
                 return True
             else:
-                logger.error(
-                    f"Failed to mark video {video_id} as processed in database"
-                )
-                return False
-        elif result == "member_only":
-            # Member-only video, skip comment but mark as processed
-            if mark_video_as_processed(uuid, success=True, status="member_only"):
-                logger.info(
-                    f"Skipped member-only video {video_id} and marked as processed"
-                )
-                return True
-            else:
-                logger.error(
-                    f"Failed to mark member-only video {video_id} as processed in database"
-                )
+                logger.error(f"Failed to mark video {video_id} as processed in database")
                 return False
         else:
             # Failed to post comment
@@ -468,9 +523,7 @@ def process_single_video(row, video_index, total_videos):
             return False
 
     except Exception as e:
-        logger.error(
-            f"Unexpected error processing video {row.get('video_id', 'unknown')}: {e}"
-        )
+        logger.error(f"Unexpected error processing video {row.get('video_id', 'unknown')}: {e}")
         return False
 
 
