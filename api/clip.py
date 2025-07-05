@@ -134,13 +134,18 @@ def get_discord_channel_id(channel_id):
 def format_timestamp(start_time_str, user_time_str, delay):
     """Format timestamp for display"""
     try:
-        # Parse both times as aware UTC datetimes
+        # Force UTC timezone-aware parsing
         start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
-        user_time = datetime.fromisoformat(user_time_str)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+        else:
+            start_time = start_time.astimezone(timezone.utc)
 
-        # If user_time is naive, make it UTC-aware
+        user_time = datetime.fromisoformat(user_time_str)
         if user_time.tzinfo is None:
             user_time = user_time.replace(tzinfo=timezone.utc)
+        else:
+            user_time = user_time.astimezone(timezone.utc)
 
         adjusted_user_time = user_time - timedelta(seconds=delay)
         delta = adjusted_user_time - start_time
