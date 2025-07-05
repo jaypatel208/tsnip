@@ -187,11 +187,12 @@ def get_live_stream_info(channel_id):
 
         if response.status_code == 200:
             data = response.json()
+            logger.info(f"Live stream data: {data}")
             if data:
                 return (
                     data[0].get("video_id"),
-                    data[0].get("video_title", "Live Stream"),
-                    data[0].get("start_time"),
+                    data[0].get("title", "Live Stream"),
+                    data[0].get("stream_start_time"),
                 )
     except Exception as e:
         logger.error(f"Error fetching live stream info: {e}")
