@@ -134,8 +134,14 @@ def get_discord_channel_id(channel_id):
 def format_timestamp(start_time_str, user_time_str, delay):
     """Format timestamp for display"""
     try:
+        # Parse both times as aware UTC datetimes
         start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
         user_time = datetime.fromisoformat(user_time_str)
+
+        # If user_time is naive, make it UTC-aware
+        if user_time.tzinfo is None:
+            user_time = user_time.replace(tzinfo=timezone.utc)
+
         adjusted_user_time = user_time - timedelta(seconds=delay)
         delta = adjusted_user_time - start_time
         total_seconds = max(0, int(delta.total_seconds()))  # avoid negatives
