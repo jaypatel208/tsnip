@@ -260,7 +260,7 @@ def send_discord_message_immediate(
         "title": embed_title,
         "url": youtube_url,
         "color": 0xFF0000,  # Red color like YouTube
-        "thumbnail": {"url": thumbnail_url},
+        "image": {"url": thumbnail_url},
         "fields": embed_fields,
         "footer": {"text": "Tsnip • Click title to watch at this moment"},
     }
