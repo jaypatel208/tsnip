@@ -4,7 +4,7 @@ import time
 import re
 import logging
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
@@ -132,10 +132,21 @@ def get_chat_messages(chat_id):
 
 
 def format_timestamp(start_time_str, user_time_str, delay):
-    """Format timestamp with error handling"""
+    """Format timestamp for display"""
     try:
+        # Force UTC timezone-aware parsing
         start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+        else:
+            start_time = start_time.astimezone(timezone.utc)
+
         user_time = datetime.fromisoformat(user_time_str)
+        if user_time.tzinfo is None:
+            user_time = user_time.replace(tzinfo=timezone.utc)
+        else:
+            user_time = user_time.astimezone(timezone.utc)
+
         adjusted_user_time = user_time - timedelta(seconds=delay)
         delta = adjusted_user_time - start_time
         total_seconds = max(0, int(delta.total_seconds()))  # avoid negatives
