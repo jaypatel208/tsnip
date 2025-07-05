@@ -82,67 +82,18 @@ class YouTubeStreamProcessor:
                     resp.raise_for_status()
                     videos = resp.json().get("items", [])
 
-                    # Collect video IDs for batch processing
-                    video_ids = [video["id"]["videoId"] for video in videos]
-
-                    # Get live streaming details for all videos in batch
-                    streaming_details = {}
-                    if video_ids:
-                        video_details_url = (
-                            "https://www.googleapis.com/youtube/v3/videos"
-                        )
-                        video_details_params = {
-                            "part": "liveStreamingDetails",
-                            "id": ",".join(video_ids),
-                            "key": YT_DATA_API_V3,
-                        }
-
-                        try:
-                            details_resp = requests.get(
-                                video_details_url,
-                                params=video_details_params,
-                                timeout=timeout,
-                            )
-                            details_resp.raise_for_status()
-                            details_items = details_resp.json().get("items", [])
-
-                            for item in details_items:
-                                video_id = item["id"]
-                                live_details = item.get("liveStreamingDetails", {})
-                                streaming_details[video_id] = {
-                                    "start_time": live_details.get("actualStartTime"),
-                                    "end_time": live_details.get("actualEndTime"),
-                                }
-                        except requests.exceptions.RequestException as e:
-                            logger.error(
-                                f"Error getting live streaming details: {str(e)}"
-                            )
-                            # Continue without streaming details if this fails
-
                     for video in videos:
                         video_id = video["id"]["videoId"]
-                        stream_info = {
-                            "video_id": video_id,
-                            "title": video["snippet"]["title"],
-                            "status": event_type,
-                            "url": f"https://www.youtube.com/watch?v={video_id}",
-                            "channel": channel_name,
-                            "channel_id": channel_id,
-                        }
-
-                        # Add streaming details if available
-                        if video_id in streaming_details:
-                            stream_info["start_time"] = streaming_details[video_id][
-                                "start_time"
-                            ]
-                            stream_info["end_time"] = streaming_details[video_id][
-                                "end_time"
-                            ]
-                        else:
-                            stream_info["start_time"] = None
-                            stream_info["end_time"] = None
-
-                        streams.append(stream_info)
+                        streams.append(
+                            {
+                                "video_id": video_id,
+                                "title": video["snippet"]["title"],
+                                "status": event_type,
+                                "url": f"https://www.youtube.com/watch?v={video_id}",
+                                "channel": channel_name,
+                                "channel_id": channel_id,
+                            }
+                        )
 
                     if streams:
                         logger.info(f"Found {len(streams)} {event_type} streams")
@@ -209,22 +160,18 @@ class YouTubeStreamProcessor:
             if not self.check_existing_streams(
                 streams_data["nightbot_chatid"], stream["video_id"]
             ):
-                record = {
-                    "chat_id": streams_data["nightbot_chatid"],
-                    "video_id": stream["video_id"],
-                    "title": stream["title"],
-                    "status": stream["status"],
-                    "url": stream["url"],
-                    "channel": stream["channel"],
-                    "channel_id": stream["channel_id"],
-                    "marked": False,
-                }
-
-                # Add stream timing information if available
-                if stream.get("start_time"):
-                    record["stream_start_time"] = stream["start_time"]
-
-                new_records.append(record)
+                new_records.append(
+                    {
+                        "chat_id": streams_data["nightbot_chatid"],
+                        "video_id": stream["video_id"],
+                        "title": stream["title"],
+                        "status": stream["status"],
+                        "url": stream["url"],
+                        "channel": stream["channel"],
+                        "channel_id": stream["channel_id"],
+                        "marked": False,
+                    }
+                )
             else:
                 logger.info(f"Stream {stream['video_id']} already exists, skipping...")
 
