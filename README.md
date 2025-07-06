@@ -86,7 +86,7 @@ After your live stream ends, within **2 minutes** our bot will automatically com
 Tsnip now supports sending timestamps directly to your Discord channel! When this feature is enabled, timestamp messages will be sent to your designated Discord channel like this:
 
 <div align="center">
-  <img src="assets/dc_message.png" alt="Discord Message Example" width="227"/>
+  <img src="assets\dc_message_raka.jpg" alt="Discord Message Example" width="227"/>
 </div>
 
 ### 🚨 Important Notes About Discord Integration
