@@ -7,6 +7,4 @@ github: [jaypatel208]
 buy_me_a_coffee: jaypatel208
 
 # Custom URLs for additional payment methods
-custom: 
-  - "https://buymeacoffee.com/jaypatel208"
-  - "upi://pay?pa=technoguys037493@okaxis&pn=Jay%20Patel"
+custom: ["upi://pay?pa=technoguys037493@okaxis&pn=Jay%20Patel"]
