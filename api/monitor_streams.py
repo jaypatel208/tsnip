@@ -192,12 +192,14 @@ def is_video_ready_for_comments(video_id):
 
         # Check if this is currently a live stream
         is_live = False
-        
+
         # First check: liveBroadcastContent field (most reliable)
         live_broadcast_content = snippet.get("liveBroadcastContent", "none")
         if live_broadcast_content in ["live", "upcoming"]:
             is_live = True
-            logger.info(f"Video {video_id} is {live_broadcast_content} - skipping for now")
+            logger.info(
+                f"Video {video_id} is {live_broadcast_content} - skipping for now"
+            )
             return {
                 "can_comment": False,
                 "is_member_only": False,
@@ -206,7 +208,7 @@ def is_video_ready_for_comments(video_id):
                 "is_live": True,
                 "live_status": live_broadcast_content,
             }
-        
+
         # Second check: liveStreamingDetails (only if currently live)
         if live_streaming_details:
             actual_start_time = live_streaming_details.get("actualStartTime")
@@ -215,7 +217,9 @@ def is_video_ready_for_comments(video_id):
             # Only consider it live if it has started but NOT ended
             if actual_start_time and not actual_end_time:
                 is_live = True
-                logger.info(f"Video {video_id} is currently live (no end time) - skipping for now")
+                logger.info(
+                    f"Video {video_id} is currently live (no end time) - skipping for now"
+                )
                 return {
                     "can_comment": False,
                     "is_member_only": False,
@@ -439,20 +443,26 @@ def process_single_video(row, video_index, total_videos):
 
         # Check if video is ready for comments
         video_status = is_video_ready_for_comments(video_id)
-        
+
         if video_status["is_live"]:
-            logger.info(f"Video {video_id} is still live or upcoming - skipping for now")
+            logger.info(
+                f"Video {video_id} is still live or upcoming - skipping for now"
+            )
             return False  # Don't mark as processed, will retry later
-        
+
         if video_status["is_member_only"]:
             # Member-only video, skip comment but mark as processed
             if mark_video_as_processed(uuid, success=True, status="member_only"):
-                logger.info(f"Skipped member-only video {video_id} and marked as processed")
+                logger.info(
+                    f"Skipped member-only video {video_id} and marked as processed"
+                )
                 return True
             else:
-                logger.error(f"Failed to mark member-only video {video_id} as processed in database")
+                logger.error(
+                    f"Failed to mark member-only video {video_id} as processed in database"
+                )
                 return False
-        
+
         if not video_status["can_comment"]:
             logger.warning(f"Video {video_id} is not ready for comments - skipping")
             return False
@@ -511,7 +521,9 @@ def process_single_video(row, video_index, total_videos):
                 logger.info(f"Successfully processed video {video_id}")
                 return True
             else:
-                logger.error(f"Failed to mark video {video_id} as processed in database")
+                logger.error(
+                    f"Failed to mark video {video_id} as processed in database"
+                )
                 return False
         else:
             # Failed to post comment
@@ -519,7 +531,9 @@ def process_single_video(row, video_index, total_videos):
             return False
 
     except Exception as e:
-        logger.error(f"Unexpected error processing video {row.get('video_id', 'unknown')}: {e}")
+        logger.error(
+            f"Unexpected error processing video {row.get('video_id', 'unknown')}: {e}"
+        )
         return False
 
 

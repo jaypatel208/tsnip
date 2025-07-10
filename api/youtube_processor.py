@@ -14,6 +14,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 YT_DATA_API_V3 = os.getenv("YT_DATA_API_V3")
 SUPABASE_YT_TABLE = os.getenv("SUPABASE_YT_TABLE")
+BLACKLIST_YT_CHANNEL = os.getenv("blacklist_yt_channel")
 
 youtube_queue = queue.Queue()
 
@@ -255,6 +256,11 @@ class YouTubeStreamProcessor:
             f"Processing YouTube request: chat_id={chat_id}, channel_id={channel_id}"
         )
 
+        # Check blacklist before doing anything else
+        if is_channel_blacklisted(channel_id):
+            logger.warning(f"Skipping blacklisted channel: {channel_id}")
+            return False
+
         try:
             streams_data = self.get_live_streams(chat_id, channel_id)
             if "error" in streams_data:
@@ -323,6 +329,26 @@ class YouTubeStreamProcessor:
 
 # Global instance
 processor = YouTubeStreamProcessor()
+
+
+def is_channel_blacklisted(channel_id):
+    """Check if a channel ID is in the blacklist table"""
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{BLACKLIST_YT_CHANNEL}?channel_id=eq.{channel_id}&select=id"
+        headers = {
+            "apikey": SUPABASE_API_KEY,
+            "Authorization": f"Bearer {SUPABASE_API_KEY}",
+        }
+
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        return len(data) > 0
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error checking blacklist for channel {channel_id}: {e}")
+        return False
 
 
 def initialize_youtube_processor():
