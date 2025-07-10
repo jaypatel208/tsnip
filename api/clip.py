@@ -1,5 +1,6 @@
 from flask import Flask, request, Response, jsonify
 import requests
+import re
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
@@ -405,6 +406,27 @@ def get_comment_template(channel_id):
     return DEFAULT_TEMPLATE, False
 
 
+def is_valid_chat_id(chat_id):
+    if not chat_id or not isinstance(chat_id, str):
+        return False
+
+    if len(chat_id) < 22:
+        return False
+
+    return True
+
+
+def is_valid_channel_id(channel_id):
+    if not channel_id or not isinstance(channel_id, str):
+        return False
+
+    # Match exactly 24 characters: UC + 22 valid characters
+    if not re.fullmatch(r"UC[a-zA-Z0-9_-]{22}", channel_id):
+        return False
+
+    return True
+
+
 @app.route("/api/clip", methods=["GET", "POST"])
 def clip_handler():
     # Validate environment variables
@@ -428,6 +450,16 @@ def clip_handler():
     except (ValueError, TypeError):
         logger.error(f"Invalid delay parameter: {delay}")
         return Response("Invalid delay parameter", mimetype="text/plain", status=400)
+    
+    # Validate chat_id format
+    if not is_valid_chat_id(chat_id):
+        logger.error(f"Invalid chat_id format: {chat_id}")
+        return Response("Invalid chat_id format", mimetype="text/plain", status=400)
+
+    # Validate channel_id format
+    if not is_valid_channel_id(channel_id):
+        logger.error(f"Invalid channel_id format: {channel_id}")
+        return Response("Invalid channel_id format", mimetype="text/plain", status=400)
 
     if (
         is_placeholder_value(user)
