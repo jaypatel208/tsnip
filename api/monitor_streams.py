@@ -178,6 +178,7 @@ def is_video_ready_for_comments(video_id):
                 "can_comment": False,
                 "is_member_only": False,
                 "is_public": False,
+                "is_unlisted": False,
                 "comments_disabled": True,
                 "is_live": False,
             }
@@ -187,7 +188,9 @@ def is_video_ready_for_comments(video_id):
         snippet = video_data.get("snippet", {})
         live_streaming_details = video_data.get("liveStreamingDetails", {})
 
-        is_public = status.get("privacyStatus") == "public"
+        privacy_status = status.get("privacyStatus", "")
+        is_public = privacy_status == "public"
+        is_unlisted = privacy_status == "unlisted"
         comments_disabled = status.get("madeForKids", False)
 
         # Check if this is currently a live stream
@@ -204,6 +207,7 @@ def is_video_ready_for_comments(video_id):
                 "can_comment": False,
                 "is_member_only": False,
                 "is_public": is_public,
+                "is_unlisted": is_unlisted,
                 "comments_disabled": False,
                 "is_live": True,
                 "live_status": live_broadcast_content,
@@ -224,6 +228,7 @@ def is_video_ready_for_comments(video_id):
                     "can_comment": False,
                     "is_member_only": False,
                     "is_public": is_public,
+                    "is_unlisted": is_unlisted,
                     "comments_disabled": False,
                     "is_live": True,
                     "live_status": "live",
@@ -252,17 +257,23 @@ def is_video_ready_for_comments(video_id):
         )
 
         logger.info(
-            f"Video {video_id} - Public: {is_public}, Comments disabled: {comments_disabled}, "
+            f"Video {video_id} - Public: {is_public}, Unlisted: {is_unlisted}, Comments disabled: {comments_disabled}, "
             f"Member-only: {is_member_only}, Is live: {is_live}, Broadcast content: {live_broadcast_content}"
         )
 
-        return {
-            "can_comment": is_public
+        # Can comment if: (public OR unlisted) AND not disabled AND not member-only AND not live
+        can_comment = (
+            (is_public or is_unlisted)
             and not comments_disabled
             and not is_member_only
-            and not is_live,
+            and not is_live
+        )
+
+        return {
+            "can_comment": can_comment,
             "is_member_only": is_member_only,
             "is_public": is_public,
+            "is_unlisted": is_unlisted,
             "comments_disabled": comments_disabled,
             "is_live": is_live,
         }
@@ -276,6 +287,7 @@ def is_video_ready_for_comments(video_id):
         "can_comment": False,
         "is_member_only": False,
         "is_public": False,
+        "is_unlisted": False,
         "comments_disabled": True,
         "is_live": False,
     }
