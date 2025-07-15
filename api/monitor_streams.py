@@ -161,6 +161,80 @@ def format_timestamp(start_time_str, user_time_str, delay):
         logger.error(f"Error formatting timestamp: {e}")
         return "00:00"
 
+def check_member_only_from_page(video_id):
+    """Check if video is member-only by scraping YouTube page for badges"""
+    try:
+        import re
+        import json
+        
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        
+        # Extract JSON data from HTML
+        # YouTube embeds initial data in a script tag
+        pattern = r'var ytInitialData = ({.*?});'
+        match = re.search(pattern, resp.text)
+        
+        if not match:
+            logger.warning(f"Could not find ytInitialData in page for video {video_id}")
+            return False
+            
+        try:
+            initial_data = json.loads(match.group(1))
+            
+            # Navigate to the video primary info renderer
+            try:
+                contents = initial_data["contents"]["twoColumnWatchNextResults"]["results"]["results"]["contents"]
+                
+                # Find the videoPrimaryInfoRenderer (usually first item)
+                video_primary_info = None
+                for item in contents:
+                    if "videoPrimaryInfoRenderer" in item:
+                        video_primary_info = item["videoPrimaryInfoRenderer"]
+                        break
+                
+                if video_primary_info and "badges" in video_primary_info:
+                    # Check if any badge indicates member-only content
+                    badges = video_primary_info["badges"]
+                    for badge in badges:
+                        if "metadataBadgeRenderer" in badge:
+                            badge_renderer = badge["metadataBadgeRenderer"]
+                            # Check badge text or style for member indicators
+                            if "label" in badge_renderer:
+                                label = badge_renderer["label"].lower()
+                                if "member" in label:
+                                    logger.info(f"Video {video_id} detected as member-only via badge: {label}")
+                                    return True
+                            
+                            # Check badge style/icon for member indicators
+                            if "style" in badge_renderer:
+                                style = badge_renderer["style"]
+                                if "BADGE_STYLE_TYPE_MEMBERS_ONLY" in style:
+                                    logger.info(f"Video {video_id} detected as member-only via badge style")
+                                    return True
+                
+                logger.info(f"Video {video_id} - No member-only badges found")
+                return False
+                
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Could not navigate JSON structure for video {video_id}: {e}")
+                return False
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Could not parse JSON data for video {video_id}: {e}")
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error checking member-only status for {video_id}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error checking member-only status for {video_id}: {e}")
+        return False
 
 def is_video_ready_for_comments(video_id):
     """Check if video is public and ready for comments, including live stream detection"""
@@ -235,26 +309,8 @@ def is_video_ready_for_comments(video_id):
                 }
 
         # If we reach here, it's either a regular video or an ended live stream
-        # Check for member-only indicators
-        is_member_only = False
-        title = snippet.get("title", "").lower()
-        description = snippet.get("description", "").lower()
-
-        # Common indicators of member-only content
-        member_indicators = [
-            "members only",
-            "member only",
-            "members-only",
-            "member-only",
-            "membership",
-            "members stream",
-            "member stream",
-        ]
-
-        is_member_only = any(
-            indicator in title or indicator in description
-            for indicator in member_indicators
-        )
+        # Check for member-only using web scraping (more reliable than text matching)
+        is_member_only = check_member_only_from_page(video_id)
 
         logger.info(
             f"Video {video_id} - Public: {is_public}, Unlisted: {is_unlisted}, Comments disabled: {comments_disabled}, "
