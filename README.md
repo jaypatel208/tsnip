@@ -123,6 +123,11 @@ To add Discord integration to your channel:
         <strong><a href="https://www.youtube.com/@Exion" target="_blank" style="text-decoration: none; color: #4CAF50;">@Exion</a></strong><br>
         <em style="font-size: 0.9em; color: #666;">Variety Game Streamer</em>
       </td>
+      <td align="center">
+        <img src="assets\lordbathura.jpg" alt="lordbathura" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
+        <strong><a href="https://www.youtube.com/@lordbathura" target="_blank" style="text-decoration: none; color: #4CAF50;">@lordbathura</a></strong><br>
+        <em style="font-size: 0.9em; color: #666;">Entertainer</em>
+      </td>
     </tr>
     <tr>
     <td align="center">
@@ -134,6 +139,18 @@ To add Discord integration to your channel:
         <img src="assets/rakazone.jpg" alt="RakaZone" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
         <strong><a href="https://www.youtube.com/@RakaZoneGaming" target="_blank" style="text-decoration: none; color: #4CAF50;">@RakaZoneGaming</a></strong><br>
         <em style="font-size: 0.9em; color: #666;">Variety streamer & 2x Indian Streamer of the Year</em>
+      </td>
+      <td align="center">
+        <img src="assets\surve.jpg" alt="SurvE" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
+        <strong><a href="https://www.youtube.com/@SurvEcs" target="_blank" style="text-decoration: none; color: #4CAF50;">@SurvEcs</a></strong><br>
+        <em style="font-size: 0.9em; color: #666;">FPS Streamer</em>
+      </td>
+      </tr>
+      <tr>
+      <td align="center">
+        <img src="assets\suryansh.jpg" alt="SuRYanSh ExD" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
+        <strong><a href="https://www.youtube.com/@Suryanshexd" target="_blank" style="text-decoration: none; color: #4CAF50;">@Suryanshexd</a></strong><br>
+        <em style="font-size: 0.9em; color: #666;">RPG Streamer</em>
       </td>
       </tr>
   </table>
@@ -152,7 +169,7 @@ Tsnip is built with modern, reliable technologies:
 | **Backend** | Python | Core application logic |
 | **Deployment** | Vercel | Serverless hosting platform |
 | **Database** | Supabase | Real-time database & storage |
-| **Scheduling** | Cron-job.org | Automated timestamp processing |
+| **Scheduling** | GitHub Actions, Cron-job.org | Automated timestamp processing |
 
 *Built for performance, scalability, and reliability.*
 
