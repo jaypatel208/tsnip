@@ -72,7 +72,7 @@ Once integrated, you and your viewers can create timestamps using these commands
 After your live stream ends, within **2 minutes** our bot will automatically comment with all collected timestamps:
 
 <div align="center">
-  <img src="assets/bot_comment.png" alt="Bot Comment Example" width="600"/>
+  <img src="assets\bot_comments.png" alt="Bot Comment Example" width="722"/>
 </div>
 
 *The bot organizes all timestamps chronologically, making navigation effortless for your audience.*
