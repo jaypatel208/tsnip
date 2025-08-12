@@ -1,3 +1,2 @@
 .env
-api/refreshtoken.py
 api/test.py
