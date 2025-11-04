@@ -69,7 +69,7 @@ Once integrated, you and your viewers can create timestamps using these commands
 
 ## 🎯 How It Works
 
-After your live stream ends, within **2 minutes** our bot will automatically comment with all collected timestamps:
+After your live stream ends, within **30 minutes** our bot will automatically comment with all collected timestamps:
 
 <div align="center">
   <img src="assets\bot_comments.png" alt="Bot Comment Example" width="722"/>
@@ -89,22 +89,23 @@ Tsnip now supports sending timestamps directly to your Discord channel! When thi
   <img src="assets\dc_message_raka.jpg" alt="Discord Message Example" width="227"/>
 </div>
 
-### 🚨 Important Notes About Discord Integration
+### 🚀 How to Enable Discord Integration
 
 > ⚠️ **This feature is NOT enabled by default**
 
 To add Discord integration to your channel:
 
-1. **Contact the Developer** on Discord: `jd.208`
-2. **Provide your Discord server details** and channel information
+1. **Fill out the integration form**: [Discord Integration Request Form](https://forms.gle/G8Nz71J4po1CyxgZ7)
 3. **Wait for approval** and integration setup
-4. **Feature will be activated** after discussion with the developer
+4. **Feature will be activated** after review
 
-**Why contact is required:**
+**Why approval is required:**
 - Custom setup needed for each Discord server
 - Ensures proper permissions and security
 - Prevents spam and unauthorized usage
 - Maintains service quality and stability
+
+**Need help?** Contact the developer on Discord: `jd.208` for any queries or support.
 
 ---
 
@@ -144,13 +145,6 @@ To add Discord integration to your channel:
         <img src="assets\surve.jpg" alt="SurvE" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
         <strong><a href="https://www.youtube.com/@SurvEcs" target="_blank" style="text-decoration: none; color: #4CAF50;">@SurvEcs</a></strong><br>
         <em style="font-size: 0.9em; color: #666;">FPS Streamer</em>
-      </td>
-      </tr>
-      <tr>
-      <td align="center">
-        <img src="assets\suryansh.jpg" alt="SuRYanSh ExD" width="80" height="80" style="border-radius: 50%; border: 3px solid #4CAF50; object-fit: cover;"/><br>
-        <strong><a href="https://www.youtube.com/@Suryanshexd" target="_blank" style="text-decoration: none; color: #4CAF50;">@Suryanshexd</a></strong><br>
-        <em style="font-size: 0.9em; color: #666;">RPG Streamer</em>
       </td>
       </tr>
   </table>
