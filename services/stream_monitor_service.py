@@ -6,8 +6,9 @@ monitor_streams.py. All dependencies are injected.
 
 from __future__ import annotations
 
-import logging
 import time
+
+from loguru import logger
 
 from core.constants import YOUTUBE_COMMENT_MAX_LENGTH
 from core.interfaces import StreamRepository, TimestampRepository, YouTubeClient
@@ -16,8 +17,6 @@ from services.timestamp_formatter import (
     remove_at_symbol,
     remove_custom_emojis,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class StreamMonitorService:
@@ -40,7 +39,7 @@ class StreamMonitorService:
             logger.info("No unmarked streams found.")
             return
 
-        logger.info("Found %d unmarked streams.", len(streams))
+        logger.info("Processing {} unmarked streams", len(streams))
         processed = failed = 0
 
         for i, stream in enumerate(streams, 1):
@@ -52,39 +51,42 @@ class StreamMonitorService:
             else:
                 failed += 1
 
-        logger.info("Done. Processed: %d, Failed: %d", processed, failed)
+        logger.info(
+            "Stream monitoring done — processed={}, failed={}", processed, failed
+        )
 
     # -- internal -----------------------------------------------------------
 
     def _process_single(self, stream, idx: int, total: int) -> bool:
         try:
-            logger.info("[%d/%d] Processing %s", idx, total, stream.video_id)
+            logger.info("[{}/{}] Processing video={}", idx, total, stream.video_id)
 
             status = self._yt.check_video_status(stream.video_id)
 
             if status.is_live:
-                logger.info("%s still live — skipping.", stream.video_id)
+                logger.info("{} still live — skipping.", stream.video_id)
                 return False
 
             if status.is_member_only:
                 self._stream_repo.mark_as_processed(
                     stream.id, success=True, status="member_only"
                 )
-                logger.info("Skipped member-only %s.", stream.video_id)
+                logger.info("Skipped member-only {}.", stream.video_id)
                 return True
 
             if not status.can_comment:
-                logger.warning("%s not commentable — skipping.", stream.video_id)
+                logger.warning("{} not commentable — skipping.", stream.video_id)
                 return False
 
             # Build comment body
             messages = self._ts_repo.get_chat_messages(stream.chat_id)
             if not messages:
-                logger.warning("No messages for chat %s.", stream.chat_id)
+                logger.warning("No messages for chat {} — skipping.", stream.chat_id)
                 return False
 
             lines = self._format_lines(messages, stream.stream_start_time)
             if not lines:
+                logger.warning("No formatted lines for {} — skipping.", stream.video_id)
                 return False
 
             body = (
@@ -92,24 +94,34 @@ class StreamMonitorService:
             )
             body = _truncate(body)
 
+            logger.debug(
+                "Comment for {} — {} lines, {} chars",
+                stream.video_id,
+                len(lines),
+                len(body),
+            )
+
             result = self._yt.post_comment(stream.video_id, body)
 
             if result is True:
                 self._stream_repo.mark_as_processed(stream.id)
-                logger.info("✓ Processed %s.", stream.video_id)
+                logger.success("✓ Processed {}.", stream.video_id)
                 return True
 
             if result == "member_only":
                 self._stream_repo.mark_as_processed(
                     stream.id, success=True, status="member_only"
                 )
+                logger.info(
+                    "{} marked as member_only after comment attempt.", stream.video_id
+                )
                 return True
 
-            logger.error("✗ Failed to post comment for %s.", stream.video_id)
+            logger.error("✗ Failed to post comment for {}.", stream.video_id)
             return False
 
         except Exception as exc:
-            logger.error("Error processing %s: %s", stream.video_id, exc)
+            logger.exception("Error processing {}: {}", stream.video_id, exc)
             return False
 
     @staticmethod
@@ -129,7 +141,7 @@ class StreamMonitorService:
                 else:
                     lines.append(f"{ts} – (by {user})")
             except Exception as exc:
-                logger.error("Error formatting message: %s", exc)
+                logger.error("Error formatting message: {}", exc)
         return lines
 
 
@@ -143,5 +155,5 @@ def _truncate(body: str, max_len: int = YOUTUBE_COMMENT_MAX_LENGTH) -> str:
     if last_nl > 0:
         cut = cut[:last_nl]
     cut += "\n\n[Comment truncated due to length limit]\n\nThank you for using Tsnip."
-    logger.warning("Comment truncated from %d to %d chars.", len(body), len(cut))
+    logger.warning("Comment truncated from {} to {} chars.", len(body), len(cut))
     return cut

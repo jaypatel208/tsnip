@@ -9,6 +9,7 @@ dependencies = [
     "google-auth>=2.48.0",
     "google-auth-httplib2>=0.3.0",
     "google-auth-oauthlib>=1.2.4",
+    "loguru>=0.7.3",
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
 ]

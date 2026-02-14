@@ -1,33 +1,33 @@
-"""Discord keepalive route — /api/dc-keepalive endpoint."""
+"""Discord keepalive route — cron-triggered endpoint."""
 
 from __future__ import annotations
 
-import logging
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
+from loguru import logger
 
-from core.interfaces import DiscordNotifier
+from infrastructure.config import Settings
+from infrastructure.discord_client import DiscordClient
 
-logger = logging.getLogger(__name__)
 
-
-def create_keepalive_blueprint(discord: DiscordNotifier, cron_secret: str) -> Blueprint:
+def create_keepalive_blueprint(discord: DiscordClient, settings: Settings) -> Blueprint:
     bp = Blueprint("keepalive", __name__)
 
-    @bp.route("/api/dc-keepalive", methods=["GET", "POST"])
-    def discord_keepalive():
-        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-        logger.info("Keepalive from %s", client_ip)
+    @bp.route("/api/dc-keepalive", methods=["GET"])
+    def keepalive_handler():
+        client_ip = request.remote_addr
+        logger.info("Keepalive request from {}", client_ip)
 
-        provided = request.args.get("secret") or request.headers.get("X-Cron-Secret")
-        if provided != cron_secret:
-            logger.warning("Invalid keepalive secret from %s", client_ip)
-            return (
-                jsonify({"status": "error", "message": "Invalid or missing secret"}),
-                401,
-            )
+        secret = request.args.get("secret", "")
+        if secret != settings.cron_secret_dc_keep_alive:
+            logger.warning("Invalid keepalive secret from {}", client_ip)
+            return Response("Unauthorized", status=401)
 
-        result = discord.keepalive_ping()
-        status_code = 200 if result["status"] == "success" else 500
-        return jsonify(result), status_code
+        try:
+            result = discord.keepalive_ping()
+            logger.info("Keepalive result: {}", result.get("status"))
+            return jsonify(result)
+        except Exception as exc:
+            logger.exception("Keepalive error: {}", exc)
+            return Response("Internal server error", status=500)
 
     return bp

@@ -1,88 +1,87 @@
-"""Clip route — /api/clip endpoint.
-
-Thin controller: extracts request params, validates, delegates to
-ClipService, and returns the HTTP response.
-"""
+"""Clip route — thin HTTP handler delegating to ClipService."""
 
 from __future__ import annotations
 
-import logging
 from flask import Blueprint, Response, request
+from loguru import logger
 
 from core.entities import ClipRequest
 from services.clip_service import ClipService
 
-logger = logging.getLogger(__name__)
-
 
 def create_clip_blueprint(clip_service: ClipService) -> Blueprint:
-    """Factory that builds the clip blueprint with injected service."""
-
     bp = Blueprint("clip", __name__)
 
     @bp.route("/api/clip", methods=["GET", "POST"])
     def clip_handler():
-        user = request.args.get("user") or request.form.get("user")
-        channel_id = request.args.get("channelid") or request.form.get("channelid")
-        chat_id = request.args.get("chatId") or request.form.get("chatId")
-        msg = request.args.get("msg") or request.form.get("msg") or ""
-        delay_raw = request.args.get("delay") or request.form.get("delay")
+        user = request.values.get("user", "").strip()
+        chat_id = request.values.get("chatId", "").strip()
+        channel_id = request.values.get("channelid", "").strip()
+        delay_raw = request.values.get("delay", "0").strip()
+        message = request.values.get("message", "").strip()
 
-        # --- required params ---
-        if not all([user, channel_id, chat_id, delay_raw is not None]):
-            logger.error("Missing required parameters")
-            return Response(
-                "Missing required parameters", mimetype="text/plain", status=400
+        # --- validation ---
+        if not all([user, chat_id, channel_id]):
+            logger.warning(
+                "Missing params — user='{}', chat_id='{}', channel_id='{}'",
+                user,
+                chat_id,
+                channel_id,
             )
+            return Response("Missing required parameters", status=400)
 
         try:
             delay = int(delay_raw)
         except (ValueError, TypeError):
-            logger.error("Invalid delay: %s", delay_raw)
+            logger.warning("Invalid delay value: {}", delay_raw)
+            return Response("Invalid delay", status=400)
+
+        if not clip_service.validate_chat_id(chat_id):
+            logger.warning("Invalid chat_id: {} (len={})", chat_id[:20], len(chat_id))
+            return Response("Invalid chat_id", status=400)
+
+        if not clip_service.validate_channel_id(channel_id):
+            logger.warning("Invalid channel_id: {}", channel_id)
+            return Response("Invalid channel_id", status=400)
+
+        # Nightbot placeholder detection
+        if any(clip_service.has_placeholder(v) for v in (user, chat_id, channel_id)):
+            logger.warning(
+                "Placeholder values detected — user={}, chat_id={}, channel_id={}",
+                user,
+                chat_id,
+                channel_id,
+            )
             return Response(
-                "Invalid delay parameter", mimetype="text/plain", status=400
+                "Nightbot command is not configured correctly "
+                "(receiving raw variable names instead of values).",
+                status=400,
             )
 
-        # --- format validation ---
-        if not ClipService.validate_chat_id(chat_id):
-            logger.error("Invalid chat_id: %s", chat_id)
-            return Response("Invalid chat_id format", mimetype="text/plain", status=400)
-
-        if not ClipService.validate_channel_id(channel_id):
-            logger.error("Invalid channel_id: %s", channel_id)
-            return Response(
-                "Invalid channel_id format", mimetype="text/plain", status=400
-            )
-
-        # --- placeholder detection ---
-        if any(ClipService.has_placeholder(v) for v in (user, channel_id, chat_id)) or (
-            msg and ClipService.has_placeholder(msg)
-        ):
-            error = (
-                "Error: Command not executed properly. "
-                "Make sure to use this command in a stream chat "
-                "where the bot variables can be resolved."
-            )
-            logger.error("Placeholder values detected")
-            return Response(error, mimetype="text/plain", status=400)
-
-        # --- delegate to service ---
+        # --- execute ---
         try:
+            logger.info(
+                "Clip request — user={}, channel={}, delay={}",
+                user,
+                channel_id,
+                delay,
+            )
             req = ClipRequest(
                 user=user,
                 channel_id=channel_id,
                 chat_id=chat_id,
                 delay=delay,
-                message=msg,
+                message=message,
+                user_timestamp="",
             )
             comment = clip_service.create_clip(req)
+            logger.info("Clip response sent for user={}", user)
             return Response(comment, mimetype="text/plain")
         except RuntimeError as exc:
-            logger.error("Clip creation failed: %s", exc)
-            return Response(
-                "Error: Failed to save timestamp. Please try again.",
-                mimetype="text/plain",
-                status=500,
-            )
+            logger.error("Clip creation failed: {}", exc)
+            return Response("Internal server error", status=500)
+        except Exception as exc:
+            logger.exception("Unexpected error in clip handler: {}", exc)
+            return Response("Internal server error", status=500)
 
     return bp

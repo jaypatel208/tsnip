@@ -9,7 +9,6 @@ Implements core.interfaces.YouTubeClient. Handles:
 from __future__ import annotations
 
 import json
-import logging
 import re
 import time
 from typing import Optional
@@ -18,12 +17,11 @@ import requests
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from loguru import logger
 
 from core.entities import StreamInfo, VideoStatus
 from core.interfaces import YouTubeClient
 from infrastructure.config import Settings
-
-logger = logging.getLogger(__name__)
 
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 
@@ -38,6 +36,7 @@ class YouTubeApiClient(YouTubeClient):
         self._refresh_token = settings.youtube_refresh_token
         self._session = requests.Session()
         self._timeout = 30
+        logger.debug("YouTubeApiClient initialized")
 
     # -- YouTubeClient interface --------------------------------------------
 
@@ -45,9 +44,11 @@ class YouTubeApiClient(YouTubeClient):
         self, channel_id: str, max_results: int = 5
     ) -> list[StreamInfo]:
         """Search for live, then completed streams for *channel_id*."""
+        logger.info("Searching live streams for channel {}", channel_id)
         try:
             channel_name = self._get_channel_name(channel_id)
-        except Exception:
+        except Exception as exc:
+            logger.error("Failed to resolve channel name for {}: {}", channel_id, exc)
             return []
 
         for event_type in ("live", "completed"):
@@ -55,8 +56,15 @@ class YouTubeApiClient(YouTubeClient):
                 channel_id, channel_name, event_type, max_results
             )
             if streams:
+                logger.info(
+                    "Found {} {} stream(s) for {}",
+                    len(streams),
+                    event_type,
+                    channel_id,
+                )
                 return streams
 
+        logger.warning("No streams found for channel {}", channel_id)
         return []
 
     def check_video_status(self, video_id: str) -> VideoStatus:
@@ -76,13 +84,21 @@ class YouTubeApiClient(YouTubeClient):
             items = resp.json().get("items", [])
 
             if not items:
-                logger.warning("No video data for %s", video_id)
+                logger.warning("No video data returned for {}", video_id)
                 return VideoStatus()
 
-            return self._parse_video_status(items[0], video_id)
+            status = self._parse_video_status(items[0], video_id)
+            logger.debug(
+                "Video {} status: can_comment={}, live={}, member_only={}",
+                video_id,
+                status.can_comment,
+                status.is_live,
+                status.is_member_only,
+            )
+            return status
 
         except Exception as exc:
-            logger.error("Error checking video status for %s: %s", video_id, exc)
+            logger.exception("Error checking video status for {}: {}", video_id, exc)
             return VideoStatus()
 
     def post_comment(
@@ -92,7 +108,7 @@ class YouTubeApiClient(YouTubeClient):
         for attempt in range(max_retries):
             try:
                 logger.info(
-                    "Posting comment to %s (attempt %d/%d)",
+                    "Posting comment to {} (attempt {}/{})",
                     video_id,
                     attempt + 1,
                     max_retries,
@@ -101,12 +117,13 @@ class YouTubeApiClient(YouTubeClient):
                 status = self.check_video_status(video_id)
 
                 if status.is_member_only:
-                    logger.info("%s is member-only — skipping.", video_id)
+                    logger.info("{} is member-only — skipping.", video_id)
                     return "member_only"
 
                 if not status.can_comment:
-                    logger.warning("%s not ready for comments.", video_id)
+                    logger.warning("{} not ready for comments.", video_id)
                     if attempt < max_retries - 1:
+                        logger.info("Retrying in {}s...", delay)
                         time.sleep(delay)
                     continue
 
@@ -123,12 +140,18 @@ class YouTubeApiClient(YouTubeClient):
                     },
                 ).execute()
 
-                logger.info("Comment posted to %s.", video_id)
+                logger.success("Comment posted to {}.", video_id)
                 return True
 
             except Exception as exc:
                 error_msg = str(exc).lower()
-                logger.error("Attempt %d failed for %s: %s", attempt + 1, video_id, exc)
+                logger.error(
+                    "Attempt {}/{} failed for {}: {}",
+                    attempt + 1,
+                    max_retries,
+                    video_id,
+                    exc,
+                )
 
                 if any(
                     kw in error_msg
@@ -139,30 +162,49 @@ class YouTubeApiClient(YouTubeClient):
                         "channelsubscriptionrequired",
                     )
                 ):
+                    logger.warning(
+                        "{} — comments restricted, marking member_only.", video_id
+                    )
                     return "member_only"
                 if "quotaexceeded" in error_msg:
-                    logger.error("YouTube API quota exceeded.")
+                    logger.critical("YouTube API quota exceeded! Stopping.")
                     return False
 
                 if attempt < max_retries - 1:
+                    logger.info("Retrying in {}s...", delay)
                     time.sleep(delay)
 
+        logger.error("All {} attempts failed for {}.", max_retries, video_id)
         return False
 
     # -- internal helpers ---------------------------------------------------
 
     def _get_channel_name(self, channel_id: str) -> str:
         params = {"part": "snippet", "id": channel_id, "key": self._api_key}
-        resp = self._session.get(
-            f"{YOUTUBE_API_BASE}/channels",
-            params=params,
-            timeout=10,
-        )
-        resp.raise_for_status()
+        try:
+            resp = self._session.get(
+                f"{YOUTUBE_API_BASE}/channels",
+                params=params,
+                timeout=10,
+            )
+            resp.raise_for_status()
+        except requests.Timeout:
+            logger.error("Timeout fetching channel name for {}", channel_id)
+            raise
+        except requests.HTTPError as exc:
+            logger.error(
+                "HTTP error fetching channel {}: status={}",
+                channel_id,
+                exc.response.status_code if exc.response is not None else "?",
+            )
+            raise
         items = resp.json().get("items", [])
         if not items:
+            logger.error("Channel {} not found in YouTube API", channel_id)
             raise ValueError(f"Channel {channel_id} not found")
-        return items[0]["snippet"]["title"]
+        name = items[0]["snippet"]["title"]
+        logger.debug("Channel {} → {}", channel_id, name)
+        return name
 
     def _search_streams(
         self,
@@ -210,11 +252,11 @@ class YouTubeApiClient(YouTubeClient):
                         end_time=t.get("end_time"),
                     )
                 )
-            logger.info("Found %d %s streams.", len(streams), event_type)
+            logger.info("Found {} {} stream(s).", len(streams), event_type)
             return streams
 
         except Exception as exc:
-            logger.error("Error searching %s streams: %s", event_type, exc)
+            logger.exception("Error searching {} streams: {}", event_type, exc)
             return []
 
     def _batch_streaming_details(
@@ -243,7 +285,7 @@ class YouTubeApiClient(YouTubeClient):
                 }
             return result
         except Exception as exc:
-            logger.error("Error getting streaming details: %s", exc)
+            logger.exception("Error getting streaming details: {}", exc)
             return {}
 
     def _parse_video_status(self, video_data: dict, video_id: str) -> VideoStatus:
@@ -259,7 +301,7 @@ class YouTubeApiClient(YouTubeClient):
         # Live broadcast check
         broadcast = snippet.get("liveBroadcastContent", "none")
         if broadcast in ("live", "upcoming"):
-            logger.info("%s is %s — skipping.", video_id, broadcast)
+            logger.info("{} is {} — skipping.", video_id, broadcast)
             return VideoStatus(
                 is_public=is_public,
                 is_unlisted=is_unlisted,
@@ -272,7 +314,7 @@ class YouTubeApiClient(YouTubeClient):
         if live_details.get("actualStartTime") and not live_details.get(
             "actualEndTime"
         ):
-            logger.info("%s is currently live (no end time).", video_id)
+            logger.info("{} is currently live (no end time).", video_id)
             return VideoStatus(
                 is_public=is_public,
                 is_unlisted=is_unlisted,
@@ -287,7 +329,7 @@ class YouTubeApiClient(YouTubeClient):
         )
 
         logger.info(
-            "%s — public=%s unlisted=%s disabled=%s member=%s",
+            "{} — public={} unlisted={} disabled={} member={}",
             video_id,
             is_public,
             is_unlisted,
@@ -340,23 +382,33 @@ class YouTubeApiClient(YouTubeClient):
                     label = br.get("label", "").lower()
                     style = br.get("style", "")
                     if "member" in label or "BADGE_STYLE_TYPE_MEMBERS_ONLY" in style:
-                        logger.info("%s detected as member-only.", video_id)
+                        logger.info("{} detected as member-only.", video_id)
                         return True
 
             return False
 
         except Exception as exc:
-            logger.error("Error checking member-only for %s: %s", video_id, exc)
+            logger.exception("Error checking member-only for {}: {}", video_id, exc)
             return False
 
     def _get_authenticated_client(self):
-        creds = Credentials(
-            None,
-            refresh_token=self._refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=self._client_id,
-            client_secret=self._client_secret,
-            scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-        )
-        creds.refresh(GoogleAuthRequest())
-        return build("youtube", "v3", credentials=creds, cache_discovery=False)
+        logger.debug("Refreshing YouTube OAuth credentials")
+        try:
+            creds = Credentials(
+                None,
+                refresh_token=self._refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
+            )
+            creds.refresh(GoogleAuthRequest())
+            logger.debug("OAuth credentials refreshed successfully")
+            return build("youtube", "v3", credentials=creds, cache_discovery=False)
+        except Exception as exc:
+            logger.error(
+                "OAuth credential refresh failed — check YOUTUBE_CLIENT_ID, "
+                "YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN: {}",
+                type(exc).__name__,
+            )
+            raise

@@ -6,14 +6,12 @@ pre-configures auth headers so callers don't repeat boilerplate.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Optional
 
 import requests
+from loguru import logger
 
 from infrastructure.config import Settings
-
-logger = logging.getLogger(__name__)
 
 
 class SupabaseClient:
@@ -29,6 +27,7 @@ class SupabaseClient:
             }
         )
         self._timeout = 30
+        logger.debug("SupabaseClient initialized (base_url={})", self._base_url)
 
     # -- helpers -------------------------------------------------------------
 
@@ -40,9 +39,29 @@ class SupabaseClient:
         if query:
             url = f"{url}?{query}"
 
-        resp = self._session.get(url, timeout=timeout or self._timeout)
-        resp.raise_for_status()
-        return resp.json()
+        logger.debug("Supabase GET {}", url)
+        try:
+            resp = self._session.get(url, timeout=timeout or self._timeout)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.Timeout:
+            logger.error(
+                "Supabase GET timeout — table={}, timeout={}s",
+                table,
+                timeout or self._timeout,
+            )
+            raise
+        except requests.HTTPError as exc:
+            logger.error(
+                "Supabase GET failed — table={}, status={}, body={}",
+                table,
+                exc.response.status_code if exc.response is not None else "?",
+                exc.response.text[:200] if exc.response is not None else "?",
+            )
+            raise
+        except requests.ConnectionError:
+            logger.error("Supabase connection error — table={}", table)
+            raise
 
     def post(
         self, table: str, data: Any, timeout: Optional[int] = None
@@ -53,10 +72,22 @@ class SupabaseClient:
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         }
-        resp = self._session.post(
-            url, json=data, headers=headers, timeout=timeout or self._timeout
+        logger.debug(
+            "Supabase POST {} ({} record(s))",
+            table,
+            len(data) if isinstance(data, list) else 1,
         )
-        return resp
+        try:
+            resp = self._session.post(
+                url, json=data, headers=headers, timeout=timeout or self._timeout
+            )
+            return resp
+        except requests.Timeout:
+            logger.error("Supabase POST timeout — table={}", table)
+            raise
+        except requests.ConnectionError:
+            logger.error("Supabase POST connection error — table={}", table)
+            raise
 
     def patch(
         self, table: str, query: str, data: Any, timeout: Optional[int] = None
@@ -64,7 +95,15 @@ class SupabaseClient:
         """PATCH (update) rows in *table* matching *query*."""
         url = f"{self._base_url}/{table}?{query}"
         headers = {"Content-Type": "application/json"}
-        resp = self._session.patch(
-            url, json=data, headers=headers, timeout=timeout or self._timeout
-        )
-        return resp
+        logger.debug("Supabase PATCH {} where {}", table, query)
+        try:
+            resp = self._session.patch(
+                url, json=data, headers=headers, timeout=timeout or self._timeout
+            )
+            return resp
+        except requests.Timeout:
+            logger.error("Supabase PATCH timeout — table={}, query={}", table, query)
+            raise
+        except requests.ConnectionError:
+            logger.error("Supabase PATCH connection error — table={}", table)
+            raise

@@ -1,33 +1,36 @@
-"""Monitor-streams route — /api/monitor-streams endpoint."""
+"""Monitor-streams route — cron-triggered endpoint."""
 
 from __future__ import annotations
 
-import logging
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, request
+from loguru import logger
 
+from infrastructure.config import Settings
 from services.stream_monitor_service import StreamMonitorService
-
-logger = logging.getLogger(__name__)
 
 
 def create_monitor_blueprint(
-    monitor_service: StreamMonitorService, cron_secret: str
+    monitor_service: StreamMonitorService, settings: Settings
 ) -> Blueprint:
     bp = Blueprint("monitor", __name__)
 
-    @bp.route("/api/monitor-streams", methods=["GET", "POST"])
-    def cron_monitor_streams():
-        secret = request.args.get("secret") or request.headers.get("X-Cron-Secret")
-        if not secret or secret != cron_secret:
-            logger.warning("Unauthorized monitor-streams attempt")
-            return jsonify({"error": "Unauthorized"}), 401
+    @bp.route("/api/monitor-streams", methods=["GET"])
+    def monitor_handler():
+        secret = request.args.get("secret", "")
+        if secret != settings.cron_secret:
+            logger.warning(
+                "Unauthorized monitor-streams attempt (ip={})",
+                request.remote_addr,
+            )
+            return Response("Unauthorized", status=401)
 
         try:
-            logger.info("Running stream monitoring…")
+            logger.info("Stream monitoring triggered (ip={})", request.remote_addr)
             monitor_service.run()
-            return jsonify({"message": "Stream monitoring executed successfully"}), 200
+            logger.info("Stream monitoring completed successfully")
+            return Response("OK", status=200)
         except Exception as exc:
-            logger.error("Stream monitoring error: %s", exc)
-            return jsonify({"error": str(exc)}), 500
+            logger.exception("Stream monitoring error: {}", exc)
+            return Response("Internal server error", status=500)
 
     return bp

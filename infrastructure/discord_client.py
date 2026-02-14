@@ -5,17 +5,15 @@ Implements core.interfaces.DiscordNotifier.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Optional
 
 import requests
+from loguru import logger
 
 from core.interfaces import DiscordNotifier
 from infrastructure.config import Settings
 from services.timestamp_formatter import timestamp_to_seconds
-
-logger = logging.getLogger(__name__)
 
 
 class DiscordClient(DiscordNotifier):
@@ -33,6 +31,7 @@ class DiscordClient(DiscordNotifier):
             }
         )
         self._timeout = 10
+        logger.debug("DiscordClient initialized")
 
     # -- DiscordNotifier interface ------------------------------------------
 
@@ -46,10 +45,10 @@ class DiscordClient(DiscordNotifier):
         timestamp: Optional[str] = None,
     ) -> bool:
         if not video_id:
-            logger.warning("No video_id for Discord notification.")
+            logger.warning("No video_id for Discord notification — skipping.")
             return False
         if not timestamp:
-            logger.warning("No timestamp for Discord notification.")
+            logger.warning("No timestamp for Discord notification — skipping.")
             return False
 
         youtube_url = self._build_youtube_url(video_id, timestamp)
@@ -58,27 +57,36 @@ class DiscordClient(DiscordNotifier):
         )
 
         try:
+            logger.info(
+                "Sending Discord notification → channel={}, video={}, user={}",
+                discord_channel_id,
+                video_id,
+                username,
+            )
             resp = self._session.post(
                 f"{self.DISCORD_API}/channels/{discord_channel_id}/messages",
                 json={"embeds": [embed]},
                 timeout=self._timeout,
             )
             if resp.status_code == 200:
-                logger.info("✓ Discord notification sent.")
+                logger.success(
+                    "Discord notification sent to channel {}", discord_channel_id
+                )
                 return True
             logger.error(
-                "✗ Discord notification failed: %s — %s",
+                "Discord notification failed (status={}): {}",
                 resp.status_code,
                 resp.text,
             )
             return False
         except Exception as exc:
-            logger.error("✗ Error sending Discord notification: %s", exc)
+            logger.exception("Error sending Discord notification: {}", exc)
             return False
 
     def keepalive_ping(self) -> dict:
         start = datetime.now()
         try:
+            logger.debug("Sending Discord keepalive ping")
             resp = self._session.get(
                 f"{self.DISCORD_API}/users/@me", timeout=self._timeout
             )
@@ -86,6 +94,11 @@ class DiscordClient(DiscordNotifier):
 
             if resp.status_code == 200:
                 bot = resp.json()
+                logger.info(
+                    "Keepalive OK — bot={}, response_time={}ms",
+                    bot.get("username"),
+                    elapsed_ms,
+                )
                 return {
                     "status": "success",
                     "message": "Discord bot keepalive successful",
@@ -94,6 +107,7 @@ class DiscordClient(DiscordNotifier):
                     "response_time_ms": elapsed_ms,
                     "timestamp": datetime.now().isoformat(),
                 }
+            logger.warning("Discord API returned status {}", resp.status_code)
             return {
                 "status": "warning",
                 "message": f"Discord API returned {resp.status_code}",
@@ -101,11 +115,10 @@ class DiscordClient(DiscordNotifier):
                 "timestamp": datetime.now().isoformat(),
             }
         except Exception as exc:
-            logger.error("Keepalive error: %s", exc)
+            logger.exception("Keepalive failed: {}", exc)
             return {
                 "status": "error",
                 "message": "Keepalive failed",
-                "error": str(exc),
                 "timestamp": datetime.now().isoformat(),
             }
 

@@ -6,9 +6,10 @@ All dependencies are injected via constructor (DIP).
 
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime, timezone
+
+from loguru import logger
 
 from core.entities import ClipRequest
 from core.interfaces import (
@@ -19,8 +20,6 @@ from core.interfaces import (
     YouTubeClient,
 )
 from services.timestamp_formatter import format_timestamp
-
-logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for channel ID validation
 _CHANNEL_ID_RE = re.compile(r"^UC[a-zA-Z0-9_-]{22}$")
@@ -56,8 +55,15 @@ class ClipService:
         Returns the comment text to send back to the user.
 
         Raises:
-            ValueError: on validation failure (caller converts to 400).
+            RuntimeError: on DB failure (caller converts to 500).
         """
+        logger.info(
+            "Creating clip — user={}, channel={}, delay={}s, msg='{}'",
+            req.user,
+            req.channel_id,
+            req.delay,
+            req.message[:50] if req.message else "",
+        )
         user_timestamp = datetime.now(timezone.utc).isoformat()
 
         # 1. Persist
@@ -69,6 +75,7 @@ class ClipService:
             req.user,
             user_timestamp,
         ):
+            logger.error("Failed to save clip for user={}", req.user)
             raise RuntimeError("Failed to save timestamp to database")
 
         # 2. YouTube processing (if needed)
@@ -80,7 +87,9 @@ class ClipService:
         )
 
         # 4. Build response comment
-        return self._build_comment(req.channel_id, req.user, req.delay, req.message)
+        comment = self._build_comment(req.channel_id, req.user, req.delay, req.message)
+        logger.success("Clip created for user={}", req.user)
+        return comment
 
     # -- validation helpers (static, used by routes) -------------------------
 
@@ -100,23 +109,23 @@ class ClipService:
 
     def _maybe_process_youtube(self, chat_id: str, channel_id: str) -> None:
         if self._stream_repo.chat_id_exists(chat_id):
-            logger.info("Chat ID %s already exists, skipping YT processing.", chat_id)
+            logger.debug("Chat ID {} already exists, skipping YT processing.", chat_id)
             return
 
-        logger.info("Chat ID %s not found — attempting YouTube processing.", chat_id)
+        logger.info("Chat ID {} not found — attempting YouTube processing.", chat_id)
         if self._channel_repo.is_blacklisted(channel_id):
-            logger.warning("Skipping blacklisted channel %s.", channel_id)
+            logger.warning("Skipping blacklisted channel {}.", channel_id)
             return
 
         try:
             streams = self._yt.get_live_streams(channel_id)
             if streams:
                 self._stream_repo.insert_streams(chat_id, streams)
-                logger.info("YouTube processing completed.")
+                logger.info("YouTube processing completed for {}.", channel_id)
             else:
-                logger.warning("No streams found for channel %s.", channel_id)
+                logger.warning("No streams found for channel {}.", channel_id)
         except Exception as exc:
-            logger.error("Error during YouTube processing: %s", exc)
+            logger.exception("Error during YouTube processing: {}", exc)
 
     def _send_discord_notification(
         self,
@@ -128,7 +137,7 @@ class ClipService:
     ) -> None:
         dc_channel = self._channel_repo.get_discord_channel_id(channel_id)
         if not dc_channel:
-            logger.warning("No Discord integration for channel %s.", channel_id)
+            logger.debug("No Discord integration for channel {}.", channel_id)
             return
 
         info = self._stream_repo.get_live_stream_info(channel_id)
@@ -151,6 +160,20 @@ class ClipService:
     ) -> str:
         tpl = self._channel_repo.get_comment_template(channel_id)
         title_part = f" — titled '{message}'" if message else ""
-        return tpl.template.format(
-            user=user, delay=delay, title_part=title_part, tool_used=self._tool_used
-        )
+        try:
+            return tpl.template.format(
+                user=user, delay=delay, title_part=title_part, tool_used=self._tool_used
+            )
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.error(
+                "Failed to format comment template for channel {} — "
+                "template may contain invalid placeholders: {}",
+                channel_id,
+                exc,
+            )
+            # Fallback: return a safe default comment
+            return (
+                f"Timestamped (with a -{delay}s delay) by {user}{title_part}."
+                f"All timestamps get commented after the stream ends. "
+                f"Tool used: {self._tool_used}"
+            )

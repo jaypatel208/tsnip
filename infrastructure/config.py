@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from loguru import logger
+
 from core.exceptions import ConfigurationError
 
 
@@ -45,12 +47,15 @@ class Settings:
         def _require(name: str) -> str:
             value = os.getenv(name, "").strip()
             if not value:
+                logger.error("Missing required environment variable: {}", name)
                 raise ConfigurationError(
                     f"Missing required environment variable: {name}"
                 )
             return value
 
-        return Settings(
+        logger.info("Loading configuration from environment variables")
+
+        settings = Settings(
             supabase_url=_require("SUPABASE_URL"),
             supabase_api_key=_require("SUPABASE_API_KEY"),
             supabase_table=_require("SUPABASE_TABLE"),
@@ -66,3 +71,10 @@ class Settings:
             cron_secret=_require("CRON_SECRET"),
             cron_secret_dc_keep_alive=_require("CRON_SECRET_DC_KEEP_ALIVE"),
         )
+
+        logger.info(
+            "Configuration loaded — {} env vars validated",
+            14,
+        )
+
+        return settings

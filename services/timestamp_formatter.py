@@ -6,11 +6,10 @@ functions that lived in both clip.py and monitor_streams.py.
 
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def format_timestamp(start_time_str: str, user_time_str: str, delay: int) -> str:
@@ -38,7 +37,7 @@ def format_timestamp(start_time_str: str, user_time_str: str, delay: int) -> str
             return f"{hours:02}:{minutes:02}:{seconds:02}"
         return f"{minutes:02}:{seconds:02}"
     except Exception as exc:
-        logger.error("Error formatting timestamp: %s", exc)
+        logger.error("Error formatting timestamp: {}", exc)
         return "00:00"
 
 
@@ -51,7 +50,7 @@ def timestamp_to_seconds(timestamp: str) -> int:
         if len(parts) == 3:
             return parts[0] * 3600 + parts[1] * 60 + parts[2]
     except (ValueError, AttributeError) as exc:
-        logger.error("Error converting timestamp: %s", exc)
+        logger.error("Error converting timestamp '{}': {}", timestamp, exc)
     return 0
 
 
