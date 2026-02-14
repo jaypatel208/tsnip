@@ -1,14 +1,8 @@
 {
-  "builds": [
+  "rewrites": [
     {
-      "src": "/api/clip.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/clip.py"
+      "source": "/(.*)",
+      "destination": "/api/clip.py"
     }
   ]
 }
