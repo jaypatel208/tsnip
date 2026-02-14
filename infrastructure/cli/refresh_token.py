@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
+"""CLI utility to obtain a YouTube OAuth refresh token.
+
+Usage:
+    python -m infrastructure.cli.refresh_token
+"""
+
+import sys
 import os
+
+# Ensure project root is on sys.path for absolute imports
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 
-# Load environment variables
 load_dotenv()
 
-# YouTube API scopes for posting comments
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
     "https://www.googleapis.com/auth/youtube",
 ]
 
 
-def main():
-    # Get credentials from .env
+def main() -> None:
     client_id = os.getenv("YOUTUBE_CLIENT_ID")
     client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
 
-    # Create client config
+    if not client_id or not client_secret:
+        print("Error: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set in .env")
+        sys.exit(1)
+
     client_config = {
         "installed": {
             "client_id": client_id,
@@ -30,10 +42,8 @@ def main():
         }
     }
 
-    # Create flow
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
 
-    # Run the OAuth flow
     try:
         credentials = flow.run_local_server(
             port=8080, prompt="consent", access_type="offline"
@@ -41,6 +51,7 @@ def main():
         print(f"Refresh token: {credentials.refresh_token}")
     except Exception as e:
         print(f"Error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

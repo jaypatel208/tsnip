@@ -169,6 +169,23 @@ Tsnip is built with modern, reliable technologies:
 
 ---
 
+## 🧹 Code Quality
+
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting:
+
+```bash
+# Lint — check for errors and style issues
+uv run ruff check .
+
+# Lint + auto-fix — automatically fix fixable issues
+uv run ruff check --fix .
+
+# Format — apply consistent code formatting
+uv run ruff format .
+```
+
+---
+
 ## 💝 Support Tsnip
 
 ### Why Support Us?
