@@ -18,7 +18,9 @@ def create_clip_blueprint(clip_service: ClipService) -> Blueprint:
         chat_id = request.values.get("chatId", "").strip()
         channel_id = request.values.get("channelid", "").strip()
         delay_raw = request.values.get("delay", "0").strip()
-        message = request.values.get("message", "").strip()
+        message = (
+            request.values.get("msg", "") or request.values.get("message", "")
+        ).strip()
 
         # --- validation ---
         if not all([user, chat_id, channel_id]):
