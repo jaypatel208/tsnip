@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 import requests
 from loguru import logger
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from infrastructure.config import Settings
 
@@ -26,7 +28,15 @@ class SupabaseClient:
                 "Authorization": f"Bearer {settings.supabase_api_key}",
             }
         )
-        self._timeout = 30
+        # Retry transient network errors automatically
+        retry = Retry(
+            total=2,
+            backoff_factor=0.3,
+            status_forcelist=[502, 503, 504],
+            allowed_methods=["GET", "POST", "PATCH"],
+        )
+        self._session.mount("https://", HTTPAdapter(max_retries=retry))
+        self._timeout = 10
         logger.debug("SupabaseClient initialized (base_url={})", self._base_url)
 
     # -- helpers -------------------------------------------------------------

@@ -179,24 +179,42 @@ class SupabaseStreamRepository(StreamRepository):
             return False
 
     def insert_streams(self, chat_id: str, streams: list[StreamInfo]) -> bool:
+        if not streams:
+            return True
+
+        # Batch-check existing video IDs in ONE query instead of N separate calls
+        video_ids = [s.video_id for s in streams]
+        existing_ids: set[str] = set()
+        try:
+            ids_param = ",".join(f'"{vid}"' for vid in video_ids)
+            rows = self._client.get(
+                self._table,
+                f"chat_id=eq.{chat_id}&video_id=in.({ids_param})&select=video_id",
+                timeout=10,
+            )
+            existing_ids = {r["video_id"] for r in rows}
+        except Exception as exc:
+            logger.warning("Error batch-checking existing streams: {}", exc)
+            # Fall through — we'll try to insert and let Supabase handle dupes
+
         new_records = []
         for s in streams:
-            if not self.stream_exists(chat_id, s.video_id):
-                record: dict = {
-                    "chat_id": chat_id,
-                    "video_id": s.video_id,
-                    "title": s.title,
-                    "status": s.status,
-                    "url": s.url,
-                    "channel": s.channel,
-                    "channel_id": s.channel_id,
-                    "marked": False,
-                }
-                if s.start_time:
-                    record["stream_start_time"] = s.start_time
-                new_records.append(record)
-            else:
+            if s.video_id in existing_ids:
                 logger.debug("Stream {} already exists, skipping.", s.video_id)
+                continue
+            record: dict = {
+                "chat_id": chat_id,
+                "video_id": s.video_id,
+                "title": s.title,
+                "status": s.status,
+                "url": s.url,
+                "channel": s.channel,
+                "channel_id": s.channel_id,
+                "marked": False,
+            }
+            if s.start_time:
+                record["stream_start_time"] = s.start_time
+            new_records.append(record)
 
         if not new_records:
             logger.info("No new streams to insert for chat_id {}.", chat_id)

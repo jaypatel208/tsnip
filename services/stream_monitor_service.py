@@ -6,8 +6,6 @@ monitor_streams.py. All dependencies are injected.
 
 from __future__ import annotations
 
-import time
-
 from loguru import logger
 
 from core.constants import YOUTUBE_COMMENT_MAX_LENGTH
@@ -43,9 +41,6 @@ class StreamMonitorService:
         processed = failed = 0
 
         for i, stream in enumerate(streams, 1):
-            if i > 1:
-                time.sleep(2)  # rate-limit guard
-
             if self._process_single(stream, i, len(streams)):
                 processed += 1
             else:
@@ -74,9 +69,24 @@ class StreamMonitorService:
                 logger.info("Skipped member-only {}.", stream.video_id)
                 return True
 
+            # Unavailable (private, deleted, or API returned empty data):
+            # Mark so we don't retry these forever on every cron run.
+            if not status.is_public and not status.is_unlisted and not status.is_live:
+                self._stream_repo.mark_as_processed(
+                    stream.id, success=False, status="unavailable"
+                )
+                logger.warning(
+                    "{} unavailable (private/deleted) — marked.", stream.video_id
+                )
+                return True
+
             if not status.can_comment:
-                logger.warning("{} not commentable — skipping.", stream.video_id)
-                return False
+                # Comments disabled or restricted — mark it so we stop retrying.
+                self._stream_repo.mark_as_processed(
+                    stream.id, success=False, status="not_commentable"
+                )
+                logger.warning("{} not commentable — marked.", stream.video_id)
+                return True
 
             # Build comment body
             messages = self._ts_repo.get_chat_messages(stream.chat_id)
@@ -117,6 +127,9 @@ class StreamMonitorService:
                 )
                 return True
 
+            # post_comment returned False — could be transient (auth error,
+            # quota, etc.). Do NOT mark the stream — it can be retried on
+            # the next cron run after a manual token refresh.
             logger.error("✗ Failed to post comment for {}.", stream.video_id)
             return False
 

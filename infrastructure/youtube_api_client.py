@@ -18,6 +18,8 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from loguru import logger
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from core.entities import StreamInfo, VideoStatus
 from core.interfaces import YouTubeClient
@@ -35,7 +37,19 @@ class YouTubeApiClient(YouTubeClient):
         self._client_secret = settings.youtube_client_secret
         self._refresh_token = settings.youtube_refresh_token
         self._session = requests.Session()
-        self._timeout = 30
+        # Retry transient network errors automatically
+        retry = Retry(
+            total=2,
+            backoff_factor=0.3,
+            status_forcelist=[502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        self._session.mount("https://", HTTPAdapter(max_retries=retry))
+        self._timeout = 15
+        # Caches
+        self._member_only_cache: dict[str, bool] = {}
+        self._yt_client = None  # Cached authenticated client
+        self._yt_client_expiry: float = 0  # Epoch timestamp
         logger.debug("YouTubeApiClient initialized")
 
     # -- YouTubeClient interface --------------------------------------------
@@ -102,9 +116,25 @@ class YouTubeApiClient(YouTubeClient):
             return VideoStatus()
 
     def post_comment(
-        self, video_id: str, comment_body: str, max_retries: int = 3, delay: int = 60
+        self, video_id: str, comment_body: str, max_retries: int = 3
     ) -> bool | str:
-        """Post a comment with retry logic. Returns True, False, or 'member_only'."""
+        """Post a comment with retry logic. Returns True, False, or 'member_only'.
+
+        Status is checked once upfront to avoid redundant API calls + scrapes.
+        Retries use exponential backoff (5s, 10s, 20s) instead of flat 60s.
+        Auth errors are NOT treated as permanent — next cron run can retry
+        after a manual token refresh.
+        """
+        # Check status once upfront — no need to re-check on every retry
+        status = self.check_video_status(video_id)
+        if status.is_member_only:
+            logger.info("{} is member-only — skipping.", video_id)
+            return "member_only"
+        if not status.can_comment:
+            logger.warning("{} not commentable.", video_id)
+            return False
+
+        base_delay = 5
         for attempt in range(max_retries):
             try:
                 logger.info(
@@ -113,19 +143,6 @@ class YouTubeApiClient(YouTubeClient):
                     attempt + 1,
                     max_retries,
                 )
-
-                status = self.check_video_status(video_id)
-
-                if status.is_member_only:
-                    logger.info("{} is member-only — skipping.", video_id)
-                    return "member_only"
-
-                if not status.can_comment:
-                    logger.warning("{} not ready for comments.", video_id)
-                    if attempt < max_retries - 1:
-                        logger.info("Retrying in {}s...", delay)
-                        time.sleep(delay)
-                    continue
 
                 yt = self._get_authenticated_client()
                 yt.commentThreads().insert(
@@ -170,9 +187,12 @@ class YouTubeApiClient(YouTubeClient):
                     logger.critical("YouTube API quota exceeded! Stopping.")
                     return False
 
+                # Auth errors (expired token) — fail this run, don't mark permanent.
+                # Next cron run can succeed after manual token refresh.
                 if attempt < max_retries - 1:
-                    logger.info("Retrying in {}s...", delay)
-                    time.sleep(delay)
+                    backoff = base_delay * (2**attempt)
+                    logger.info("Retrying in {}s...", backoff)
+                    time.sleep(backoff)
 
         logger.error("All {} attempts failed for {}.", max_retries, video_id)
         return False
@@ -346,24 +366,33 @@ class YouTubeApiClient(YouTubeClient):
         )
 
     def _check_member_only(self, video_id: str) -> bool:
-        """Scrape the YouTube page to detect member-only badges."""
+        """Scrape the YouTube page to detect member-only badges.
+
+        Results are cached in-memory for the lifetime of this client
+        instance (member-only status doesn't change mid-cron-run).
+        """
+        if video_id in self._member_only_cache:
+            return self._member_only_cache[video_id]
+
+        result = False
         try:
             headers = {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/91.0.4472.124 Safari/537.36"
+                    "Chrome/120.0.0.0 Safari/537.36"
                 )
             }
             resp = self._session.get(
                 f"https://www.youtube.com/watch?v={video_id}",
                 headers=headers,
-                timeout=30,
+                timeout=8,
             )
             resp.raise_for_status()
 
             match = re.search(r"var ytInitialData = ({.*?});", resp.text)
             if not match:
+                self._member_only_cache[video_id] = False
                 return False
 
             data = json.loads(match.group(1))
@@ -383,15 +412,27 @@ class YouTubeApiClient(YouTubeClient):
                     style = br.get("style", "")
                     if "member" in label or "BADGE_STYLE_TYPE_MEMBERS_ONLY" in style:
                         logger.info("{} detected as member-only.", video_id)
-                        return True
+                        result = True
+                        break
+                if result:
+                    break
 
-            return False
-
+        except requests.Timeout:
+            logger.warning(
+                "Timeout checking member-only for {} — assuming not.", video_id
+            )
         except Exception as exc:
-            logger.exception("Error checking member-only for {}: {}", video_id, exc)
-            return False
+            logger.warning("Error checking member-only for {}: {}", video_id, exc)
+
+        self._member_only_cache[video_id] = result
+        return result
 
     def _get_authenticated_client(self):
+        """Return a cached YouTube API client, refreshing credentials only when expired."""
+        now = time.time()
+        if self._yt_client and now < self._yt_client_expiry:
+            return self._yt_client
+
         logger.debug("Refreshing YouTube OAuth credentials")
         try:
             creds = Credentials(
@@ -403,9 +444,17 @@ class YouTubeApiClient(YouTubeClient):
                 scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
             )
             creds.refresh(GoogleAuthRequest())
-            logger.debug("OAuth credentials refreshed successfully")
-            return build("youtube", "v3", credentials=creds, cache_discovery=False)
+            self._yt_client = build(
+                "youtube", "v3", credentials=creds, cache_discovery=False
+            )
+            # Cache for 50 minutes (tokens typically last 60 min)
+            self._yt_client_expiry = now + 3000
+            logger.debug("OAuth credentials refreshed and cached")
+            return self._yt_client
         except Exception as exc:
+            # Clear cache on failure so next call retries
+            self._yt_client = None
+            self._yt_client_expiry = 0
             logger.error(
                 "OAuth credential refresh failed — check YOUTUBE_CLIENT_ID, "
                 "YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN: {}",

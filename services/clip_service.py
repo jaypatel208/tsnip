@@ -7,6 +7,7 @@ All dependencies are injected via constructor (DIP).
 from __future__ import annotations
 
 import re
+import threading
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -66,7 +67,7 @@ class ClipService:
         )
         user_timestamp = datetime.now(timezone.utc).isoformat()
 
-        # 1. Persist
+        # 1. Persist — this is the critical path, must succeed
         if not self._ts_repo.insert_clip(
             req.channel_id,
             req.chat_id,
@@ -78,15 +79,23 @@ class ClipService:
             logger.error("Failed to save clip for user={}", req.user)
             raise RuntimeError("Failed to save timestamp to database")
 
-        # 2. YouTube processing (if needed)
-        self._maybe_process_youtube(req.chat_id, req.channel_id)
+        # 2. YouTube processing (fire-and-forget background thread)
+        threading.Thread(
+            target=self._maybe_process_youtube,
+            args=(req.chat_id, req.channel_id),
+            daemon=True,
+            name=f"yt-{req.channel_id[:8]}",
+        ).start()
 
-        # 3. Discord notification (best-effort)
-        self._send_discord_notification(
-            req.channel_id, req.message, req.user, user_timestamp, req.delay
-        )
+        # 3. Discord notification (fire-and-forget background thread)
+        threading.Thread(
+            target=self._send_discord_notification,
+            args=(req.channel_id, req.message, req.user, user_timestamp, req.delay),
+            daemon=True,
+            name=f"dc-{req.channel_id[:8]}",
+        ).start()
 
-        # 4. Build response comment
+        # 4. Build response comment — returned instantly
         comment = self._build_comment(req.channel_id, req.user, req.delay, req.message)
         logger.success("Clip created for user={}", req.user)
         return comment

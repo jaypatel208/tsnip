@@ -5,11 +5,14 @@ Implements core.interfaces.DiscordNotifier.
 
 from __future__ import annotations
 
+import time as _time
 from datetime import datetime
 from typing import Optional
 
 import requests
 from loguru import logger
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from core.interfaces import DiscordNotifier
 from infrastructure.config import Settings
@@ -30,7 +33,15 @@ class DiscordClient(DiscordNotifier):
                 "Content-Type": "application/json",
             }
         )
-        self._timeout = 10
+        # Retry transient network errors automatically
+        retry = Retry(
+            total=2,
+            backoff_factor=0.3,
+            status_forcelist=[502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        self._session.mount("https://", HTTPAdapter(max_retries=retry))
+        self._timeout = 5
         logger.debug("DiscordClient initialized")
 
     # -- DiscordNotifier interface ------------------------------------------
@@ -56,32 +67,45 @@ class DiscordClient(DiscordNotifier):
             video_id, video_title, message, username, timestamp, youtube_url
         )
 
-        try:
-            logger.info(
-                "Sending Discord notification → channel={}, video={}, user={}",
-                discord_channel_id,
-                video_id,
-                username,
-            )
-            resp = self._session.post(
-                f"{self.DISCORD_API}/channels/{discord_channel_id}/messages",
-                json={"embeds": [embed]},
-                timeout=self._timeout,
-            )
-            if resp.status_code == 200:
-                logger.success(
-                    "Discord notification sent to channel {}", discord_channel_id
+        url = f"{self.DISCORD_API}/channels/{discord_channel_id}/messages"
+        payload = {"embeds": [embed]}
+
+        # Retry once on transient / rate-limit errors
+        for attempt in range(2):
+            try:
+                logger.info(
+                    "Sending Discord notification → channel={}, video={}, user={}",
+                    discord_channel_id,
+                    video_id,
+                    username,
                 )
-                return True
-            logger.error(
-                "Discord notification failed (status={}): {}",
-                resp.status_code,
-                resp.text,
-            )
-            return False
-        except Exception as exc:
-            logger.exception("Error sending Discord notification: {}", exc)
-            return False
+                resp = self._session.post(url, json=payload, timeout=self._timeout)
+                if resp.status_code == 200:
+                    logger.success(
+                        "Discord notification sent to channel {}", discord_channel_id
+                    )
+                    return True
+
+                # Handle Discord rate limiting (429)
+                if resp.status_code == 429 and attempt == 0:
+                    retry_after = resp.json().get("retry_after", 1)
+                    logger.warning(
+                        "Discord rate limited — retrying after {}s", retry_after
+                    )
+                    _time.sleep(min(retry_after, 5))  # Cap at 5s
+                    continue
+
+                logger.error(
+                    "Discord notification failed (status={}): {}",
+                    resp.status_code,
+                    resp.text,
+                )
+                return False
+            except Exception as exc:
+                logger.exception("Error sending Discord notification: {}", exc)
+                return False
+
+        return False
 
     def keepalive_ping(self) -> dict:
         start = datetime.now()
