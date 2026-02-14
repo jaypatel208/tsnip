@@ -1,2 +1,86 @@
+# ========================
+# Environment & Secrets
+# ========================
 .env
+.env.*
+!.env.example
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# ========================
+# Testing & Coverage
+# ========================
 api/test.py
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ========================
+# IDE & Editors
+# ========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+*.sublime-project
+*.sublime-workspace
+
+# ========================
+# OS generated files
+# ========================
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+._*
+
+# ========================
+# Vercel
+# ========================
+.vercel/
+
+# ========================
+# uv
+# ========================
+.uv/
+
+# ========================
+# Misc
+# ========================
+*.log
+*.pid
+*.seed
