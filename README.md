@@ -72,10 +72,20 @@ Once integrated, you and your viewers can create timestamps using these commands
 After your live stream ends, within **30 minutes** our bot will automatically comment with all collected timestamps:
 
 <div align="center">
-  <img src="assets\bot_comments.png" alt="Bot Comment Example" width="722"/>
+  <img src="assets\bot_comments.png" alt="Bot Comment Example" width="420"/>
 </div>
 
 *The bot organizes all timestamps chronologically, making navigation effortless for your audience.*
+
+### 🔍 Finding the Bot Comment
+
+Since our bot comments on multiple streams in a similar format, YouTube may flag it as spam and hide it by default. To find the comment, simply **sort comments by "Newest first"** on the stream — the bot's comment will be right there:
+
+<div align="center">
+  <img src="assets/navigate_bot_comment_on_stream.gif" alt="How to find the bot comment" width="420"/>
+</div>
+
+> 💡 **Pro Tip for Creators**: Add our bot as an **approved user** on your channel. Once the bot comments, **pin that comment** and engage with it (like/reply). A pinned comment is visible to all viewers instantly — no sorting needed!
 
 ---
 
@@ -86,7 +96,7 @@ After your live stream ends, within **30 minutes** our bot will automatically co
 Tsnip now supports sending timestamps directly to your Discord channel! When this feature is enabled, timestamp messages will be sent to your designated Discord channel like this:
 
 <div align="center">
-  <img src="assets\dc_message_raka.jpg" alt="Discord Message Example" width="227"/>
+  <img src="assets\dc_message_exi.png" alt="Discord Message Example" width="420"/>
 </div>
 
 ### 🚀 How to Enable Discord Integration
@@ -160,10 +170,15 @@ Tsnip is built with modern, reliable technologies:
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Backend** | Python | Core application logic |
-| **Deployment** | Vercel | Serverless hosting platform |
-| **Database** | Supabase | Real-time database & storage |
-| **Scheduling** | GitHub Actions, Cron-job.org | Automated timestamp processing |
+| **Language** | Python 3.12+ | Core application logic |
+| **Framework** | Flask | Lightweight web framework & API routes |
+| **Package Manager** | uv | Fast dependency management (replaces pip) |
+| **YouTube API** | YouTube Data API v3 + OAuth 2.0 | Stream detection, video status & comment posting |
+| **Discord** | Discord Bot API | Real-time timestamp notifications to Discord channels |
+| **Database** | Supabase | Timestamps, stream records & channel config storage |
+| **Logging** | Loguru | Structured, production-grade logging |
+| **Linting** | Ruff | Fast linting & code formatting |
+| **Deployment** | Vercel (Serverless) | Zero-config Python serverless hosting |
 
 *Built for performance, scalability, and reliability.*
 
@@ -237,7 +252,7 @@ Got questions, suggestions, or need help? Reach out to us:
 - **💬 Discord**: `jd.208`
 - **💼 LinkedIn**: [jaypatel208](https://www.linkedin.com/in/jaypatel208/)
 
-*For Discord integration requests, please contact via Discord: `jd.208`*
+*For any queries, issues, or suggestions, feel free to reach out through any of the above channels!*
 
 ---
 
