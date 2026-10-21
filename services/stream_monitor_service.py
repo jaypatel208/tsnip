@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from core.constants import YOUTUBE_COMMENT_MAX_LENGTH
+from core.constants import COMMENT_FOOTER, YOUTUBE_COMMENT_MAX_LENGTH
 from core.interfaces import StreamRepository, TimestampRepository, YouTubeClient
 from services.timestamp_formatter import (
     format_timestamp,
@@ -99,9 +99,7 @@ class StreamMonitorService:
                 logger.warning("No formatted lines for {} — skipping.", stream.video_id)
                 return False
 
-            body = (
-                "Time stamps:\n\n" + "\n".join(lines) + "\n\nThank you for using Tsnip."
-            )
+            body = "Time stamps:\n\n" + "\n".join(lines) + "\n\n" + COMMENT_FOOTER
             body = _truncate(body)
 
             logger.debug(
@@ -163,10 +161,10 @@ def _truncate(body: str, max_len: int = YOUTUBE_COMMENT_MAX_LENGTH) -> str:
     if len(body) <= max_len:
         return body
 
-    cut = body[: max_len - 100]
+    cut = body[: max_len - 100 - len(COMMENT_FOOTER)]
     last_nl = cut.rfind("\n")
     if last_nl > 0:
         cut = cut[:last_nl]
-    cut += "\n\n[Comment truncated due to length limit]\n\nThank you for using Tsnip."
+    cut += "\n\n[Comment truncated due to length limit]\n\n" + COMMENT_FOOTER
     logger.warning("Comment truncated from {} to {} chars.", len(body), len(cut))
     return cut

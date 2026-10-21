@@ -14,6 +14,7 @@ from loguru import logger
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from core.constants import GLIDE_LINK
 from core.interfaces import DiscordNotifier
 from infrastructure.config import Settings
 from services.timestamp_formatter import timestamp_to_seconds
@@ -173,6 +174,12 @@ class DiscordClient(DiscordNotifier):
                 {"name": "🎬 Stream", "value": video_title, "inline": False},
                 {"name": "👤 Created by", "value": username, "inline": True},
                 {"name": "⏰ Timestamp", "value": timestamp, "inline": True},
+                {
+                    "name": "🧩 Tsnip is free",
+                    "value": "Support it by playing Glide, a word puzzle: "
+                    f"[Get it on Google Play]({GLIDE_LINK}/discord)",
+                    "inline": False,
+                },
             ],
             "footer": {"text": "Tsnip • Click title to watch at this moment"},
         }
