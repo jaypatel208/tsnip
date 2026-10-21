@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from flask import Blueprint, Response, request
 from loguru import logger
 
@@ -16,8 +18,10 @@ def create_monitor_blueprint(
 
     @bp.route("/api/monitor-streams", methods=["GET"])
     def monitor_handler():
-        secret = request.args.get("secret", "")
-        if secret != settings.cron_secret:
+        # The cron sends it as a header, which stays out of request logs;
+        # ?secret= still works for older callers.
+        secret = request.headers.get("X-Cron-Secret") or request.args.get("secret", "")
+        if not hmac.compare_digest(secret.encode(), settings.cron_secret.encode()):
             logger.warning(
                 "Unauthorized monitor-streams attempt (ip={})",
                 request.remote_addr,

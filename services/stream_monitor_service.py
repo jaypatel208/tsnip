@@ -6,15 +6,22 @@ monitor_streams.py. All dependencies are injected.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from loguru import logger
 
 from core.constants import COMMENT_FOOTER, YOUTUBE_COMMENT_MAX_LENGTH
 from core.interfaces import StreamRepository, TimestampRepository, YouTubeClient
 from services.timestamp_formatter import (
+    _parse_iso,
     format_timestamp,
     remove_at_symbol,
     remove_custom_emojis,
 )
+
+# A stream that still can't be commented this long after it started is
+# taken out of the queue, so it stops costing YouTube calls on every run.
+GIVE_UP_AFTER = timedelta(hours=48)
 
 
 class StreamMonitorService:
@@ -69,35 +76,24 @@ class StreamMonitorService:
                 logger.info("Skipped member-only {}.", stream.video_id)
                 return True
 
-            # Unavailable (private, deleted, or API returned empty data):
-            # Mark so we don't retry these forever on every cron run.
+            # Unavailable (private, deleted, or API returned empty data). It
+            # may be a passing API error, so retry until GIVE_UP_AFTER.
             if not status.is_public and not status.is_unlisted and not status.is_live:
-                self._stream_repo.mark_as_processed(
-                    stream.id, success=False, status="unavailable"
-                )
-                logger.warning(
-                    "{} unavailable (private/deleted) — marked.", stream.video_id
-                )
-                return True
+                return self._give_up_if_stale(stream, "unavailable")
 
             if not status.can_comment:
-                # Comments disabled or restricted — mark it so we stop retrying.
-                self._stream_repo.mark_as_processed(
-                    stream.id, success=False, status="not_commentable"
-                )
-                logger.warning("{} not commentable — marked.", stream.video_id)
-                return True
+                return self._give_up_if_stale(stream, "not_commentable")
 
             # Build comment body
             messages = self._ts_repo.get_chat_messages(stream.chat_id)
             if not messages:
-                logger.warning("No messages for chat {} — skipping.", stream.chat_id)
-                return False
+                logger.warning("No messages for chat {}.", stream.chat_id)
+                return self._give_up_if_stale(stream, "no_timestamps")
 
             lines = self._format_lines(messages, stream.stream_start_time)
             if not lines:
-                logger.warning("No formatted lines for {} — skipping.", stream.video_id)
-                return False
+                logger.warning("No formatted lines for {}.", stream.video_id)
+                return self._give_up_if_stale(stream, "no_timestamps")
 
             body = "Time stamps:\n\n" + "\n".join(lines) + "\n\n" + COMMENT_FOOTER
             body = _truncate(body)
@@ -134,6 +130,24 @@ class StreamMonitorService:
         except Exception as exc:
             logger.exception("Error processing {}: {}", stream.video_id, exc)
             return False
+
+    def _give_up_if_stale(self, stream, status: str) -> bool:
+        """Take *stream* out of the queue with *status* once it started more
+        than GIVE_UP_AFTER ago; until then leave it for the next run. A
+        stream with no start time is kept, as before."""
+        try:
+            started = _parse_iso(stream.stream_start_time)
+        except (TypeError, ValueError, AttributeError):
+            started = None
+        if started is None or datetime.now(timezone.utc) - started < GIVE_UP_AFTER:
+            logger.warning("{} {} — retrying next run.", stream.video_id, status)
+            return False
+
+        self._stream_repo.mark_as_processed(stream.id, success=True, status=status)
+        logger.warning(
+            "{} {} after {} — given up.", stream.video_id, status, GIVE_UP_AFTER
+        )
+        return True
 
     @staticmethod
     def _format_lines(messages, start_time: str | None) -> list[str]:

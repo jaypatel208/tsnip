@@ -117,20 +117,12 @@ class YouTubeApiClient(YouTubeClient):
     ) -> bool | str:
         """Post a comment with retry logic. Returns True, False, or 'member_only'.
 
-        Status is checked once upfront to avoid redundant API calls + scrapes.
+        The caller has just checked the video's status, so it isn't checked
+        again here (that cost an API call and a member-only scrape per post).
         Retries use exponential backoff (5s, 10s, 20s) instead of flat 60s.
         Auth errors are NOT treated as permanent — next cron run can retry
         after a manual token refresh.
         """
-        # Check status once upfront — no need to re-check on every retry
-        status = self.check_video_status(video_id)
-        if status.is_member_only:
-            logger.info("{} is member-only — skipping.", video_id)
-            return "member_only"
-        if not status.can_comment:
-            logger.warning("{} not commentable.", video_id)
-            return False
-
         base_delay = 5
         for attempt in range(max_retries):
             try:
