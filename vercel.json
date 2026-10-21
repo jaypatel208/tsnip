@@ -1,4 +1,22 @@
 {
+  "regions": ["bom1"],
+  "redirects": [
+    {
+      "source": "/glide",
+      "destination": "https://play.google.com/store/apps/details?id=dev.jay.glide&referrer=utm_source%3Dtsnip%26utm_medium%3Dchat%26utm_campaign%3Dtsnip_chat",
+      "permanent": false
+    },
+    {
+      "source": "/glide/comment",
+      "destination": "https://play.google.com/store/apps/details?id=dev.jay.glide&referrer=utm_source%3Dtsnip%26utm_medium%3Dcomment%26utm_campaign%3Dtsnip_comment",
+      "permanent": false
+    },
+    {
+      "source": "/glide/discord",
+      "destination": "https://play.google.com/store/apps/details?id=dev.jay.glide&referrer=utm_source%3Dtsnip%26utm_medium%3Ddiscord%26utm_campaign%3Dtsnip_discord",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

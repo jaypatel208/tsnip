@@ -14,9 +14,6 @@ import time
 from typing import Optional
 
 import requests
-from google.auth.transport.requests import Request as GoogleAuthRequest
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from loguru import logger
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -434,6 +431,12 @@ class YouTubeApiClient(YouTubeClient):
             return self._yt_client
 
         logger.debug("Refreshing YouTube OAuth credentials")
+        # Imported here, not at the top: only the comment cron needs them, and
+        # they are heavy enough to slow every cold `!ts` reply.
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
         try:
             creds = Credentials(
                 None,

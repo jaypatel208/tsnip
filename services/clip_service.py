@@ -7,10 +7,12 @@ All dependencies are injected via constructor (DIP).
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from loguru import logger
 
+from core.constants import CHAT_MAX_LENGTH, DEFAULT_COMMENT_TEMPLATE
 from core.entities import ClipRequest
 from core.interfaces import (
     ChannelRepository,
@@ -78,16 +80,32 @@ class ClipService:
             logger.error("Failed to save clip for user={}", req.user)
             raise RuntimeError("Failed to save timestamp to database")
 
-        # 2. YouTube processing (if needed)
-        self._maybe_process_youtube(req.chat_id, req.channel_id)
+        # 2–4 are independent network calls, so they run side by side and
+        # Nightbot waits for the slowest instead of the sum. All of them
+        # finish before we reply: work left running after the response is
+        # lost on Vercel (see 28ef3e4).
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            # 2. YouTube processing (if needed)
+            youtube = pool.submit(
+                self._maybe_process_youtube, req.chat_id, req.channel_id
+            )
+            # 3. Discord notification (best-effort)
+            discord = pool.submit(
+                self._send_discord_notification,
+                req.channel_id,
+                req.message,
+                req.user,
+                user_timestamp,
+                req.delay,
+            )
+            # 4. Build response comment
+            built = pool.submit(
+                self._build_comment, req.channel_id, req.user, req.delay, req.message
+            )
+            youtube.result()
+            discord.result()
+            comment = built.result()
 
-        # 3. Discord notification (best-effort)
-        self._send_discord_notification(
-            req.channel_id, req.message, req.user, user_timestamp, req.delay
-        )
-
-        # 4. Build response comment
-        comment = self._build_comment(req.channel_id, req.user, req.delay, req.message)
         logger.success("Clip created for user={}", req.user)
         return comment
 
@@ -159,11 +177,8 @@ class ClipService:
         self, channel_id: str, user: str, delay: int, message: str
     ) -> str:
         tpl = self._channel_repo.get_comment_template(channel_id)
-        title_part = f" — titled '{message}'" if message else ""
         try:
-            return tpl.template.format(
-                user=user, delay=delay, title_part=title_part, tool_used=self._tool_used
-            )
+            return self._fill(tpl.template, user, delay, message)
         except (KeyError, IndexError, ValueError) as exc:
             logger.error(
                 "Failed to format comment template for channel {} — "
@@ -172,8 +187,20 @@ class ClipService:
                 exc,
             )
             # Fallback: return a safe default comment
-            return (
-                f"Timestamped (with a -{delay}s delay) by {user}{title_part}."
-                f"All timestamps get commented after the stream ends. "
-                f"Tool used: {self._tool_used}"
+            return self._fill(DEFAULT_COMMENT_TEMPLATE, user, delay, message)
+
+    def _fill(self, template: str, user: str, delay: int, message: str) -> str:
+        """Fill *template*, shortening only the title so the line fits YouTube
+        chat and the link at its end is never cut off."""
+
+        def fill(title: str) -> str:
+            title_part = f" — titled '{title}'" if title else ""
+            return template.format(
+                user=user, delay=delay, title_part=title_part, tool_used=self._tool_used
             )
+
+        line = fill(message)
+        over = len(line) - CHAT_MAX_LENGTH
+        if over > 0 and message:
+            line = fill(message[: max(len(message) - over - 1, 0)] + "…")
+        return line
