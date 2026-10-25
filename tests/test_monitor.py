@@ -15,6 +15,8 @@ from routes.monitor_routes import create_monitor_blueprint
 from services.stream_monitor_service import GIVE_UP_AFTER, StreamMonitorService
 
 SECRET = "s3cret"
+# A Nightbot chat ID; it carries the video id I9N75SNAi5w.
+CHAT = "KicKGFVDUXVoeDFRVGJTWjd5dmFPYU5BZVp6ZxILSTlONzVTTkFpNXc"
 
 
 class FakeMonitor:
@@ -78,8 +80,8 @@ def stream_started(ago):
     start = (datetime.now(timezone.utc) - ago).isoformat()
     return UnmarkedStream(
         id="row",
-        video_id="vid",
-        chat_id="chat",
+        video_id="I9N75SNAi5w",
+        chat_id=CHAT,
         channel_id="ch",
         stream_start_time=start,
     )
@@ -118,6 +120,15 @@ class GiveUpTest(unittest.TestCase):
             stream_started(timedelta(0)), stream_start_time=None
         )
         self.assertEqual(run(stream, UNAVAILABLE), [])
+
+
+
+class WrongLinkTest(unittest.TestCase):
+    def test_another_streams_chat_is_never_posted_on_this_video(self):
+        stream = dataclasses.replace(
+            stream_started(timedelta(hours=3)), video_id="jl81RdZAE9I"
+        )
+        self.assertEqual(run(stream, COMMENTABLE), [("row", True, "wrong_link")])
 
 
 if __name__ == "__main__":

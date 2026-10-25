@@ -6,6 +6,8 @@ All dependencies are injected via constructor (DIP).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -28,6 +30,24 @@ _CHANNEL_ID_RE = re.compile(r"^UC[a-zA-Z0-9_-]{22}$")
 _PLACEHOLDER_VALUES = frozenset(
     {"$(user)", "$(chatid)", "$(channelid)", "$(querystring)"}
 )
+
+
+def video_id_from_chat(chat_id: str) -> str | None:
+    """The stream's video id, carried in a YouTube live chat ID: base64 of a
+    protobuf whose field 2 (tag 0x12, length 11) holds it."""
+    try:
+        raw = base64.urlsafe_b64decode(
+            chat_id.translate(str.maketrans("+/", "-_")) + "=" * (-len(chat_id) % 4)
+        )
+    except (binascii.Error, ValueError):
+        return None
+    i = raw.rfind(b"\x12\x0b")
+    if i < 0 or len(raw) < i + 13:
+        return None
+    try:
+        return raw[i + 2 : i + 13].decode("ascii")
+    except UnicodeDecodeError:
+        return None
 
 
 class ClipService:
@@ -126,24 +146,30 @@ class ClipService:
     # -- internal -----------------------------------------------------------
 
     def _maybe_process_youtube(self, chat_id: str, channel_id: str) -> None:
-        if self._stream_repo.chat_id_exists(chat_id):
-            logger.debug("Chat ID {} already exists, skipping YT processing.", chat_id)
+        # Link the chat to its own stream only. Searching the channel linked
+        # it to up to 5 of its streams, so old videos got this stream's
+        # timestamps and the stream itself sometimes got none.
+        video_id = video_id_from_chat(chat_id)
+        if not video_id:
+            logger.warning("No video id in chat ID {}.", chat_id)
+            return
+        if self._stream_repo.stream_exists(chat_id, video_id):
+            logger.debug("Stream {} already linked, skipping.", video_id)
             return
 
-        logger.info("Chat ID {} not found — attempting YouTube processing.", chat_id)
+        logger.info("Stream {} not linked — attempting YouTube processing.", video_id)
         if self._channel_repo.is_blacklisted(channel_id):
             logger.warning("Skipping blacklisted channel {}.", channel_id)
             return
 
-        try:
-            streams = self._yt.get_live_streams(channel_id)
-            if streams:
-                self._stream_repo.insert_streams(chat_id, streams)
-                logger.info("YouTube processing completed for {}.", channel_id)
-            else:
-                logger.warning("No streams found for channel {}.", channel_id)
-        except Exception as exc:
-            logger.exception("Error during YouTube processing: {}", exc)
+        stream = self._yt.get_stream(video_id)
+        # The chat ID comes from the request, so it must not point the bot
+        # at another channel's video.
+        if not stream or stream.channel_id != channel_id:
+            logger.warning("Stream {} not found for {}.", video_id, channel_id)
+            return
+        self._stream_repo.insert_streams(chat_id, [stream])
+        logger.info("YouTube processing completed for {}.", channel_id)
 
     def _send_discord_notification(
         self,

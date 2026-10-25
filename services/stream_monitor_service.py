@@ -12,6 +12,7 @@ from loguru import logger
 
 from core.constants import COMMENT_FOOTER, YOUTUBE_COMMENT_MAX_LENGTH
 from core.interfaces import StreamRepository, TimestampRepository, YouTubeClient
+from services.clip_service import video_id_from_chat
 from services.timestamp_formatter import (
     _parse_iso,
     format_timestamp,
@@ -62,6 +63,15 @@ class StreamMonitorService:
     def _process_single(self, stream, idx: int, total: int) -> bool:
         try:
             logger.info("[{}/{}] Processing video={}", idx, total, stream.video_id)
+
+            # Rows from before chats were linked to their own stream only:
+            # this chat's timestamps belong to another video, never post them.
+            if video_id_from_chat(stream.chat_id) != stream.video_id:
+                self._stream_repo.mark_as_processed(
+                    stream.id, success=True, status="wrong_link"
+                )
+                logger.warning("{} linked to another stream's chat.", stream.video_id)
+                return True
 
             status = self._yt.check_video_status(stream.video_id)
 

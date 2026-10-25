@@ -46,9 +46,6 @@ class StreamRepository(ABC):
     """Read/write access to the YouTube streams table."""
 
     @abstractmethod
-    def chat_id_exists(self, chat_id: str) -> bool: ...
-
-    @abstractmethod
     def get_live_stream_info(self, channel_id: str) -> LiveStreamInfo: ...
 
     @abstractmethod
@@ -88,9 +85,7 @@ class YouTubeClient(ABC):
     """Interface for YouTube Data API + OAuth operations."""
 
     @abstractmethod
-    def get_live_streams(
-        self, channel_id: str, max_results: int = 5
-    ) -> list[StreamInfo]: ...
+    def get_stream(self, video_id: str) -> Optional[StreamInfo]: ...
 
     @abstractmethod
     def check_video_status(self, video_id: str) -> VideoStatus: ...

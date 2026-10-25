@@ -1,7 +1,7 @@
 """YouTube Data API + OAuth client implementation.
 
 Implements core.interfaces.YouTubeClient. Handles:
-- Searching for live/completed streams via the Data API
+- Looking up a stream by its video id via the Data API
 - Checking video status (public, member-only, live, etc.)
 - Posting comments via OAuth with retry logic
 """
@@ -51,32 +51,40 @@ class YouTubeApiClient(YouTubeClient):
 
     # -- YouTubeClient interface --------------------------------------------
 
-    def get_live_streams(
-        self, channel_id: str, max_results: int = 5
-    ) -> list[StreamInfo]:
-        """Search for live, then completed streams for *channel_id*."""
-        logger.info("Searching live streams for channel {}", channel_id)
+    def get_stream(self, video_id: str) -> Optional[StreamInfo]:
+        """Look up the one stream *video_id* (1 quota unit; a search costs 100)."""
         try:
-            channel_name = self._get_channel_name(channel_id)
-        except Exception as exc:
-            logger.error("Failed to resolve channel name for {}: {}", channel_id, exc)
-            return []
-
-        for event_type in ("live", "completed"):
-            streams = self._search_streams(
-                channel_id, channel_name, event_type, max_results
+            resp = self._session.get(
+                f"{YOUTUBE_API_BASE}/videos",
+                params={
+                    "part": "snippet,liveStreamingDetails",
+                    "id": video_id,
+                    "key": self._api_key,
+                },
+                timeout=10,
             )
-            if streams:
-                logger.info(
-                    "Found {} {} stream(s) for {}",
-                    len(streams),
-                    event_type,
-                    channel_id,
-                )
-                return streams
+            resp.raise_for_status()
+            items = resp.json().get("items", [])
+        except Exception as exc:
+            logger.exception("Error fetching stream {}: {}", video_id, exc)
+            return None
+        if not items:
+            logger.warning("Video {} not found", video_id)
+            return None
 
-        logger.warning("No streams found for channel {}", channel_id)
-        return []
+        snippet = items[0]["snippet"]
+        details = items[0].get("liveStreamingDetails", {})
+        live = snippet.get("liveBroadcastContent") == "live"
+        return StreamInfo(
+            video_id=video_id,
+            title=snippet.get("title", ""),
+            status="live" if live else "completed",
+            url=f"https://www.youtube.com/watch?v={video_id}",
+            channel=snippet.get("channelTitle", ""),
+            channel_id=snippet.get("channelId", ""),
+            start_time=details.get("actualStartTime"),
+            end_time=details.get("actualEndTime"),
+        )
 
     def check_video_status(self, video_id: str) -> VideoStatus:
         """Check if a video is public, live, member-only, etc."""
@@ -187,115 +195,6 @@ class YouTubeApiClient(YouTubeClient):
         return False
 
     # -- internal helpers ---------------------------------------------------
-
-    def _get_channel_name(self, channel_id: str) -> str:
-        params = {"part": "snippet", "id": channel_id, "key": self._api_key}
-        try:
-            resp = self._session.get(
-                f"{YOUTUBE_API_BASE}/channels",
-                params=params,
-                timeout=10,
-            )
-            resp.raise_for_status()
-        except requests.Timeout:
-            logger.error("Timeout fetching channel name for {}", channel_id)
-            raise
-        except requests.HTTPError as exc:
-            logger.error(
-                "HTTP error fetching channel {}: status={}",
-                channel_id,
-                exc.response.status_code if exc.response is not None else "?",
-            )
-            raise
-        items = resp.json().get("items", [])
-        if not items:
-            logger.error("Channel {} not found in YouTube API", channel_id)
-            raise ValueError(f"Channel {channel_id} not found")
-        name = items[0]["snippet"]["title"]
-        logger.debug("Channel {} → {}", channel_id, name)
-        return name
-
-    def _search_streams(
-        self,
-        channel_id: str,
-        channel_name: str,
-        event_type: str,
-        max_results: int,
-    ) -> list[StreamInfo]:
-        try:
-            params = {
-                "part": "snippet",
-                "channelId": channel_id,
-                "type": "video",
-                "eventType": event_type,
-                "key": self._api_key,
-                "maxResults": max_results,
-                "order": "date",
-            }
-            resp = self._session.get(
-                f"{YOUTUBE_API_BASE}/search",
-                params=params,
-                timeout=10,
-            )
-            resp.raise_for_status()
-            videos = resp.json().get("items", [])
-
-            if not videos:
-                return []
-
-            timing = self._batch_streaming_details([v["id"]["videoId"] for v in videos])
-
-            streams: list[StreamInfo] = []
-            for v in videos:
-                vid = v["id"]["videoId"]
-                t = timing.get(vid, {})
-                streams.append(
-                    StreamInfo(
-                        video_id=vid,
-                        title=v["snippet"]["title"],
-                        status=event_type,
-                        url=f"https://www.youtube.com/watch?v={vid}",
-                        channel=channel_name,
-                        channel_id=channel_id,
-                        start_time=t.get("start_time"),
-                        end_time=t.get("end_time"),
-                    )
-                )
-            logger.info("Found {} {} stream(s).", len(streams), event_type)
-            return streams
-
-        except Exception as exc:
-            logger.exception("Error searching {} streams: {}", event_type, exc)
-            return []
-
-    def _batch_streaming_details(
-        self, video_ids: list[str]
-    ) -> dict[str, dict[str, Optional[str]]]:
-        if not video_ids:
-            return {}
-        try:
-            params = {
-                "part": "liveStreamingDetails",
-                "id": ",".join(video_ids),
-                "key": self._api_key,
-            }
-            resp = self._session.get(
-                f"{YOUTUBE_API_BASE}/videos",
-                params=params,
-                timeout=10,
-            )
-            resp.raise_for_status()
-            result: dict[str, dict[str, Optional[str]]] = {}
-            for item in resp.json().get("items", []):
-                details = item.get("liveStreamingDetails", {})
-                result[item["id"]] = {
-                    "start_time": details.get("actualStartTime"),
-                    "end_time": details.get("actualEndTime"),
-                }
-            return result
-        except Exception as exc:
-            logger.exception("Error getting streaming details: {}", exc)
-            return {}
 
     def _parse_video_status(self, video_data: dict, video_id: str) -> VideoStatus:
         status = video_data.get("status", {})

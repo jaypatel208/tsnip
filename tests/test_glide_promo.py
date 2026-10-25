@@ -14,8 +14,8 @@ from core.constants import (
     DEFAULT_COMMENT_TEMPLATE,
     GLIDE_LINK,
 )
-from core.entities import ClipRequest, CommentTemplate, LiveStreamInfo
-from services.clip_service import ClipService
+from core.entities import ClipRequest, CommentTemplate, LiveStreamInfo, StreamInfo
+from services.clip_service import ClipService, video_id_from_chat
 from services.stream_monitor_service import _truncate
 
 CHANNEL = "UC" + "a" * 22
@@ -37,7 +37,7 @@ class FakeRepos:
         self._record("insert")
         return True
 
-    def chat_id_exists(self, chat_id):
+    def stream_exists(self, chat_id, video_id):
         self._record("youtube")
         return True
 
@@ -86,7 +86,8 @@ class ChatLineTest(unittest.TestCase):
 class CreateClipTest(unittest.TestCase):
     def test_every_step_still_runs_and_the_line_comes_back(self):
         repos = FakeRepos()
-        req = ClipRequest(user="@u", channel_id=CHANNEL, chat_id="c" * 30, delay=22)
+        chat = ChatLinkTest.CHAT
+        req = ClipRequest(user="@u", channel_id=CHANNEL, chat_id=chat, delay=22)
         text = service(repos).create_clip(req)
         self.assertEqual(repos.calls[0], "insert")
         self.assertCountEqual(repos.calls[1:], ["youtube", "discord", "template"])
@@ -100,6 +101,44 @@ class CommentFooterTest(unittest.TestCase):
         body = _truncate("00:01 – (by someone)\n" * 1000, max_len=9000)
         self.assertTrue(body.endswith(COMMENT_FOOTER))
         self.assertLessEqual(len(body), 9000)
+
+    def test_the_footer_has_no_link(self):
+        self.assertNotIn("http", COMMENT_FOOTER)
+
+
+class ChatLinkTest(unittest.TestCase):
+    CHAT = "KicKGFVDUXVoeDFRVGJTWjd5dmFPYU5BZVp6ZxILSTlONzVTTkFpNXc"
+
+    def test_the_video_id_comes_out_of_a_nightbot_chat_id(self):
+        self.assertEqual(video_id_from_chat(self.CHAT), "I9N75SNAi5w")
+
+    def test_garbage_gives_none(self):
+        self.assertIsNone(video_id_from_chat("c" * 30))
+        self.assertIsNone(video_id_from_chat("not base64 !!"))
+
+    def test_the_chat_is_linked_to_its_own_stream_only(self):
+        inserted = []
+
+        class Repos(FakeRepos):
+            def stream_exists(self, chat_id, video_id):
+                return False
+
+            def is_blacklisted(self, channel_id):
+                return False
+
+            def insert_streams(self, chat_id, streams):
+                inserted.extend(streams)
+
+            def get_stream(self, video_id):
+                return StreamInfo(video_id, "t", "live", "u", "Nyla", owner)
+
+        owner = "UCQuhx1QTbSZ7yvaOaNAeZzg"
+        service(Repos())._maybe_process_youtube(self.CHAT, owner)
+        self.assertEqual([s.video_id for s in inserted], ["I9N75SNAi5w"])
+
+        inserted.clear()
+        service(Repos())._maybe_process_youtube(self.CHAT, CHANNEL)
+        self.assertEqual(inserted, [], "another channel's video must not be linked")
 
 
 class VercelRedirectsTest(unittest.TestCase):
@@ -120,7 +159,6 @@ class VercelRedirectsTest(unittest.TestCase):
                 )
             )
             self.assertIn(f"utm_campaign%3Dtsnip_{placement}", r["destination"])
-        self.assertIn("/glide/comment", COMMENT_FOOTER)
 
 
 if __name__ == "__main__":

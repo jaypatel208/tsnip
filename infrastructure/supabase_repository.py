@@ -106,20 +106,6 @@ class SupabaseStreamRepository(StreamRepository):
         self._client = client
         self._table = settings.supabase_yt_table
 
-    def chat_id_exists(self, chat_id: str) -> bool:
-        try:
-            rows = self._client.get(
-                self._table,
-                f"chat_id=eq.{chat_id}&select=chat_id&limit=1",
-                timeout=10,
-            )
-            exists = len(rows) > 0
-            logger.debug("chat_id_exists({}) → {}", chat_id, exists)
-            return exists
-        except Exception as exc:
-            logger.exception("Error checking chat_id {}: {}", chat_id, exc)
-            return False
-
     def get_live_stream_info(self, channel_id: str) -> LiveStreamInfo:
         try:
             rows = self._client.get(
