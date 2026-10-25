@@ -12,12 +12,12 @@ DEFAULT_COMMENT_TEMPLATE = (
     "Tsnip is free 💙 support it, play Glide: " + GLIDE_LINK
 )
 
-# Closes the timestamps comment posted after the stream. Linked comments do
-# show publicly (lrCR0IV2cuU), and removing the link didn't stop YouTube
-# holding some, so the link stays.
+# Closes the timestamps comment posted after the stream. No link: of the
+# bot's comments since Oct 15, 77% without a link are public against 8% with
+# the Glide link (YouTube holds the rest), so Glide is named, not linked.
 COMMENT_FOOTER = (
     "Thank you for using Tsnip. It's free — if it helped, support it by "
-    f"playing Glide, my word puzzle game: {GLIDE_LINK}/comment"
+    "playing Glide, my word puzzle game on the Play Store."
 )
 
 # YouTube limits

@@ -206,8 +206,10 @@ class CommentFooterTest(unittest.TestCase):
         self.assertTrue(body.endswith(COMMENT_FOOTER))
         self.assertLessEqual(len(body), 9000)
 
-    def test_the_footer_ends_with_the_comment_placement_link(self):
-        self.assertTrue(COMMENT_FOOTER.endswith(GLIDE_LINK + "/comment"))
+    def test_the_footer_names_glide_without_a_link(self):
+        # Linked comments were public 8% of the time, unlinked ones 77%.
+        self.assertIn("Glide", COMMENT_FOOTER)
+        self.assertNotIn("http", COMMENT_FOOTER)
 
 
 class VercelRedirectsTest(unittest.TestCase):
