@@ -22,3 +22,8 @@ COMMENT_FOOTER = (
 # YouTube limits
 YOUTUBE_COMMENT_MAX_LENGTH = 9000
 CHAT_MAX_LENGTH = 200
+
+# Bounds on a !ts, matching the checks on the timestamps table.
+MESSAGE_MAX_LENGTH = 200
+USER_MAX_LENGTH = 100
+MAX_DELAY = 300

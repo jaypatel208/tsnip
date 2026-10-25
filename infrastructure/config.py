@@ -7,7 +7,7 @@ Validates all required vars eagerly so mis-configuration fails fast.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 from loguru import logger
 
@@ -20,11 +20,7 @@ class Settings:
 
     # Supabase
     supabase_url: str
-    supabase_api_key: str
-    supabase_table: str  # timestamps table
-    supabase_yt_table: str  # youtube streams table
-    supabase_yt_channel_table: str  # channel config table
-    blacklist_yt_channel: str  # blacklist table
+    supabase_api_key: str  # the secret (service_role) key: RLS keeps others out
 
     # YouTube
     yt_data_api_key: str
@@ -58,10 +54,6 @@ class Settings:
         settings = Settings(
             supabase_url=_require("SUPABASE_URL"),
             supabase_api_key=_require("SUPABASE_API_KEY"),
-            supabase_table=_require("SUPABASE_TABLE"),
-            supabase_yt_table=_require("SUPABASE_YT_TABLE"),
-            supabase_yt_channel_table=_require("SUPABASE_YT_CHANNEL_TABLE"),
-            blacklist_yt_channel=_require("BLACKLIST_YT_CHANNEL"),
             yt_data_api_key=_require("YT_DATA_API_V3"),
             youtube_client_id=_require("YOUTUBE_CLIENT_ID"),
             youtube_client_secret=_require("YOUTUBE_CLIENT_SECRET"),
@@ -74,7 +66,7 @@ class Settings:
 
         logger.info(
             "Configuration loaded — {} env vars validated",
-            14,
+            len(fields(Settings)),
         )
 
         return settings

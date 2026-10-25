@@ -5,7 +5,9 @@ from __future__ import annotations
 from flask import Blueprint, Response, request
 from loguru import logger
 
+from core.constants import MAX_DELAY, MESSAGE_MAX_LENGTH, USER_MAX_LENGTH
 from core.entities import ClipRequest
+from core.exceptions import ValidationError
 from services.clip_service import ClipService
 
 
@@ -14,13 +16,13 @@ def create_clip_blueprint(clip_service: ClipService) -> Blueprint:
 
     @bp.route("/api/clip", methods=["GET", "POST"])
     def clip_handler():
-        user = request.values.get("user", "").strip()
+        user = request.values.get("user", "").strip()[:USER_MAX_LENGTH]
         chat_id = request.values.get("chatId", "").strip()
         channel_id = request.values.get("channelid", "").strip()
         delay_raw = request.values.get("delay", "0").strip()
         message = (
             request.values.get("msg", "") or request.values.get("message", "")
-        ).strip()
+        ).strip()[:MESSAGE_MAX_LENGTH]
 
         # --- validation ---
         if not all([user, chat_id, channel_id]):
@@ -34,6 +36,8 @@ def create_clip_blueprint(clip_service: ClipService) -> Blueprint:
 
         try:
             delay = int(delay_raw)
+            if not 0 <= delay <= MAX_DELAY:
+                raise ValueError
         except (ValueError, TypeError):
             logger.warning("Invalid delay value: {}", delay_raw)
             return Response("Invalid delay", status=400)
@@ -74,14 +78,13 @@ def create_clip_blueprint(clip_service: ClipService) -> Blueprint:
                 chat_id=chat_id,
                 delay=delay,
                 message=message,
-                user_timestamp="",
             )
             comment = clip_service.create_clip(req)
             logger.info("Clip response sent for user={}", user)
             return Response(comment, mimetype="text/plain")
-        except RuntimeError as exc:
-            logger.error("Clip creation failed: {}", exc)
-            return Response("Internal server error", status=500)
+        except ValidationError:
+            logger.warning("No video in chat_id: {}", chat_id[:60])
+            return Response("Invalid chat_id", status=400)
         except Exception as exc:
             logger.exception("Unexpected error in clip handler: {}", exc)
             return Response("Internal server error", status=500)

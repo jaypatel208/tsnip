@@ -9,71 +9,42 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from core.entities import (
-    ChatMessage,
-    CommentTemplate,
-    LiveStreamInfo,
-    StreamInfo,
-    UnmarkedStream,
-    VideoStatus,
-)
+from core.entities import ChatMessage, ClipContext, QueuedStream, Video
 
 
 # ---------------------------------------------------------------------------
-# Repository interfaces (data access)
+# Repository interface (data access)
 # ---------------------------------------------------------------------------
 
 
-class TimestampRepository(ABC):
-    """Read/write access to the timestamps table."""
+class Repository(ABC):
+    """Read/write access to channels, streams and timestamps."""
 
     @abstractmethod
-    def insert_clip(
-        self,
-        channel_id: str,
-        chat_id: str,
-        delay: int,
-        message: str,
-        user_name: str,
-        user_timestamp: str,
+    def record_timestamp(
+        self, chat_id: str, channel_id: str, user: str, message: str, delay: int
+    ) -> ClipContext:
+        """Save a !ts. Raises ValidationError for a chat id with no video in
+        it, ExternalServiceError when the database fails."""
+
+    @abstractmethod
+    def save_stream(self, video: Video) -> Optional[str]:
+        """Store what YouTube says about a stream; returns its state."""
+
+    @abstractmethod
+    def get_queue(self) -> list[QueuedStream]: ...
+
+    @abstractmethod
+    def get_messages(self, video_id: str) -> list[ChatMessage]: ...
+
+    @abstractmethod
+    def claim(self, video_id: str) -> bool:
+        """Move a pending stream to 'posting'; False if it isn't pending."""
+
+    @abstractmethod
+    def finish(
+        self, video_id: str, state: str, comment_id: Optional[str] = None
     ) -> bool: ...
-
-    @abstractmethod
-    def get_chat_messages(self, chat_id: str) -> list[ChatMessage]: ...
-
-
-class StreamRepository(ABC):
-    """Read/write access to the YouTube streams table."""
-
-    @abstractmethod
-    def get_live_stream_info(self, channel_id: str) -> LiveStreamInfo: ...
-
-    @abstractmethod
-    def get_unmarked_streams(self) -> list[UnmarkedStream]: ...
-
-    @abstractmethod
-    def stream_exists(self, chat_id: str, video_id: str) -> bool: ...
-
-    @abstractmethod
-    def insert_streams(self, chat_id: str, streams: list[StreamInfo]) -> bool: ...
-
-    @abstractmethod
-    def mark_as_processed(
-        self, row_id: str, success: bool = True, status: str = "ended"
-    ) -> bool: ...
-
-
-class ChannelRepository(ABC):
-    """Read access to the channel configuration table."""
-
-    @abstractmethod
-    def get_discord_channel_id(self, channel_id: str) -> Optional[str]: ...
-
-    @abstractmethod
-    def get_comment_template(self, channel_id: str) -> CommentTemplate: ...
-
-    @abstractmethod
-    def is_blacklisted(self, channel_id: str) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -85,13 +56,17 @@ class YouTubeClient(ABC):
     """Interface for YouTube Data API + OAuth operations."""
 
     @abstractmethod
-    def get_stream(self, video_id: str) -> Optional[StreamInfo]: ...
+    def get_videos(self, video_ids: list[str]) -> Optional[dict[str, Video]]:
+        """Look up to 50 videos in one call; None if the API call failed."""
 
     @abstractmethod
-    def check_video_status(self, video_id: str) -> VideoStatus: ...
+    def is_member_only(self, video_id: str) -> bool: ...
 
     @abstractmethod
-    def post_comment(self, video_id: str, comment_body: str) -> bool | str: ...
+    def post_comment(self, video_id: str, comment_body: str) -> tuple[str, str]:
+        """Returns (outcome, detail). Outcome is one of:
+        "posted" (detail: comment id), "rejected" (detail: the stream state),
+        "failed" (nothing was posted), or "unknown" (it may have been)."""
 
 
 class DiscordNotifier(ABC):

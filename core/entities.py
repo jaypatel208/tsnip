@@ -24,15 +24,19 @@ class ClipRequest:
     chat_id: str
     delay: int
     message: str = ""
-    user_timestamp: str = ""  # ISO-8601 UTC set by the service layer
 
 
 @dataclass(frozen=True)
-class CommentTemplate:
-    """A channel's comment template + whether it's custom or the default."""
+class ClipContext:
+    """What a saved !ts returns: its stream and the requesting channel's settings."""
 
-    template: str
-    is_custom: bool
+    video_id: str
+    created_at: str  # when the timestamp was saved (ISO-8601)
+    title: Optional[str] = None
+    started_at: Optional[str] = None
+    owner_id: Optional[str] = None  # the stream's channel, once YouTube confirmed it
+    template: Optional[str] = None  # None → the default template
+    dc_channel_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -41,39 +45,28 @@ class CommentTemplate:
 
 
 @dataclass(frozen=True)
-class StreamInfo:
-    """Represents a YouTube live/completed stream."""
+class Video:
+    """One video as the YouTube Data API reports it."""
 
     video_id: str
     title: str
-    status: str  # "live" | "completed" | "ended" | "member_only"
-    url: str
-    channel: str
     channel_id: str
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+    channel_title: str
+    started_at: Optional[str] = None
+    is_live: bool = False  # live, upcoming, or started and not ended
+    visible: bool = False  # public or unlisted
+    made_for_kids: bool = False  # YouTube turns comments off for these
 
 
 @dataclass(frozen=True)
-class LiveStreamInfo:
-    """Minimal live-stream data used during clip creation."""
+class QueuedStream:
+    """A stream waiting for its timestamps comment."""
 
-    video_id: Optional[str] = None
-    title: str = "Live Stream"
-    stream_start_time: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class VideoStatus:
-    """Result of checking whether a video is commentable."""
-
-    can_comment: bool = False
-    is_member_only: bool = False
-    is_public: bool = False
-    is_unlisted: bool = False
-    comments_disabled: bool = True
-    is_live: bool = False
-    live_status: str = ""
+    video_id: str
+    state: str  # "new" (not checked on YouTube yet) | "pending"
+    created_at: str
+    channel_id: Optional[str] = None
+    started_at: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -83,20 +76,9 @@ class VideoStatus:
 
 @dataclass(frozen=True)
 class ChatMessage:
-    """A single timestamped chat message from the database."""
+    """A single saved !ts."""
 
     message: str
     user_name: str
-    user_timestamp: str
+    created_at: str
     delay: int
-
-
-@dataclass(frozen=True)
-class UnmarkedStream:
-    """A stream row that hasn't been processed for comment posting yet."""
-
-    id: str  # Supabase row UUID
-    video_id: str
-    chat_id: str
-    channel_id: str
-    stream_start_time: Optional[str] = None

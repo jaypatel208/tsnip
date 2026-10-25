@@ -1,21 +1,26 @@
-"""Stream monitor use-case — processes ended streams and posts comments.
+"""Stream monitor use-case — comments each ended stream's timestamps on it.
 
-Replaces the handler() + process_single_video() logic from the old
-monitor_streams.py. All dependencies are injected.
+Each run checks the queued streams on YouTube (50 per call), and for every
+one that has ended, claims it, posts its comment once, and records the
+outcome. All dependencies are injected.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import time
 from datetime import datetime, timedelta, timezone
+from typing import Callable, Optional
 
 from loguru import logger
 
 from core.constants import COMMENT_FOOTER, YOUTUBE_COMMENT_MAX_LENGTH
-from core.interfaces import StreamRepository, TimestampRepository, YouTubeClient
-from services.clip_service import video_id_from_chat
+from core.entities import QueuedStream, Video
+from core.interfaces import Repository, YouTubeClient
 from services.timestamp_formatter import (
     _parse_iso,
-    format_timestamp,
+    comment_lines,
+    offset_seconds,
     remove_at_symbol,
     remove_custom_emojis,
 )
@@ -23,137 +28,154 @@ from services.timestamp_formatter import (
 # A stream that still can't be commented this long after it started is
 # taken out of the queue, so it stops costing YouTube calls on every run.
 GIVE_UP_AFTER = timedelta(hours=48)
+# Vercel stops the function at 300s; stop starting new streams before that.
+TIME_BUDGET_SECONDS = 240
+# videos.list takes up to 50 ids for the same 1 quota unit.
+BATCH_SIZE = 50
 
 
 class StreamMonitorService:
-    """Iterates over unmarked streams, builds comments, posts them."""
+    """Iterates over queued streams, builds comments, posts them."""
 
     def __init__(
         self,
-        stream_repo: StreamRepository,
-        ts_repo: TimestampRepository,
+        repo: Repository,
         youtube: YouTubeClient,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        self._stream_repo = stream_repo
-        self._ts_repo = ts_repo
+        self._repo = repo
         self._yt = youtube
+        self._clock = clock
 
     def run(self) -> None:
         """Main entry point — called by the cron route."""
-        streams = self._stream_repo.get_unmarked_streams()
+        streams = self._repo.get_queue()
         if not streams:
-            logger.info("No unmarked streams found.")
+            logger.info("No queued streams found.")
             return
 
-        logger.info("Processing {} unmarked streams", len(streams))
-        processed = failed = 0
+        logger.info("Processing {} queued streams", len(streams))
+        deadline = self._clock() + TIME_BUDGET_SECONDS
+        done = 0
 
-        for i, stream in enumerate(streams, 1):
-            if self._process_single(stream, i, len(streams)):
-                processed += 1
-            else:
-                failed += 1
+        for i in range(0, len(streams), BATCH_SIZE):
+            batch = streams[i : i + BATCH_SIZE]
+            videos = self._yt.get_videos([s.video_id for s in batch])
+            if videos is None:
+                # A failed API call says nothing about the streams; don't let
+                # it count towards giving up on them.
+                logger.error("YouTube lookup failed — batch left for next run.")
+                continue
+            for stream in batch:
+                if self._clock() > deadline:
+                    logger.warning(
+                        "Time budget spent — {} streams left for next run.",
+                        len(streams) - done,
+                    )
+                    return
+                self._process_single(stream, videos.get(stream.video_id))
+                done += 1
 
-        logger.info(
-            "Stream monitoring done — processed={}, failed={}", processed, failed
-        )
+        logger.info("Stream monitoring done — {} streams checked", done)
 
     # -- internal -----------------------------------------------------------
 
-    def _process_single(self, stream, idx: int, total: int) -> bool:
+    def _process_single(self, stream: QueuedStream, video: Optional[Video]) -> bool:
         try:
-            logger.info("[{}/{}] Processing video={}", idx, total, stream.video_id)
+            logger.info("Processing video={}", stream.video_id)
 
-            # Rows from before chats were linked to their own stream only:
-            # this chat's timestamps belong to another video, never post them.
-            if video_id_from_chat(stream.chat_id) != stream.video_id:
-                self._stream_repo.mark_as_processed(
-                    stream.id, success=True, status="wrong_link"
+            # Private, deleted, or not a video at all. It may come back, so
+            # retry until GIVE_UP_AFTER.
+            if video is None:
+                return self._give_up_if_stale(stream, "unavailable")
+
+            # First look at this stream, or its start time was unknown: store
+            # what YouTube says (its owner decides blacklisting).
+            if stream.state == "new" or not stream.started_at:
+                if self._repo.save_stream(video) == "blacklisted":
+                    logger.warning("Skipped {}: blacklisted channel.", stream.video_id)
+                    return True
+                stream = dataclasses.replace(
+                    stream,
+                    state="pending",
+                    started_at=video.started_at or stream.started_at,
                 )
-                logger.warning("{} linked to another stream's chat.", stream.video_id)
-                return True
 
-            status = self._yt.check_video_status(stream.video_id)
-
-            if status.is_live:
+            if video.is_live:
                 logger.info("{} still live — skipping.", stream.video_id)
                 return False
 
-            if status.is_member_only:
-                self._stream_repo.mark_as_processed(
-                    stream.id, success=True, status="member_only"
-                )
+            if not video.visible:
+                return self._give_up_if_stale(stream, "unavailable")
+
+            if video.made_for_kids:
+                return self._give_up_if_stale(stream, "not_commentable")
+
+            if self._yt.is_member_only(stream.video_id):
+                self._repo.finish(stream.video_id, "member_only")
                 logger.info("Skipped member-only {}.", stream.video_id)
                 return True
 
-            # Unavailable (private, deleted, or API returned empty data). It
-            # may be a passing API error, so retry until GIVE_UP_AFTER.
-            if not status.is_public and not status.is_unlisted and not status.is_live:
-                return self._give_up_if_stale(stream, "unavailable")
-
-            if not status.can_comment:
-                return self._give_up_if_stale(stream, "not_commentable")
-
-            # Build comment body
-            messages = self._ts_repo.get_chat_messages(stream.chat_id)
-            if not messages:
-                logger.warning("No messages for chat {}.", stream.chat_id)
-                return self._give_up_if_stale(stream, "no_timestamps")
-
-            lines = self._format_lines(messages, stream.stream_start_time)
+            lines = self._format_lines(
+                self._repo.get_messages(stream.video_id), stream.started_at
+            )
             if not lines:
-                logger.warning("No formatted lines for {}.", stream.video_id)
+                logger.warning("No timestamps to post for {}.", stream.video_id)
                 return self._give_up_if_stale(stream, "no_timestamps")
 
             body = "Time stamps:\n\n" + "\n".join(lines) + "\n\n" + COMMENT_FOOTER
             body = _truncate(body)
 
-            logger.debug(
-                "Comment for {} — {} lines, {} chars",
-                stream.video_id,
-                len(lines),
-                len(body),
-            )
+            # Claim it first, so a second monitor run can never post it too.
+            if not self._repo.claim(stream.video_id):
+                logger.warning("{} claimed elsewhere — skipping.", stream.video_id)
+                return False
 
-            result = self._yt.post_comment(stream.video_id, body)
+            outcome, detail = self._yt.post_comment(stream.video_id, body)
 
-            if result is True:
-                self._stream_repo.mark_as_processed(stream.id)
+            if outcome == "posted":
+                self._repo.finish(stream.video_id, "posted", comment_id=detail)
                 logger.success("✓ Processed {}.", stream.video_id)
                 return True
 
-            if result == "member_only":
-                self._stream_repo.mark_as_processed(
-                    stream.id, success=True, status="member_only"
-                )
-                logger.info(
-                    "{} marked as member_only after comment attempt.", stream.video_id
-                )
+            if outcome == "rejected":
+                self._repo.finish(stream.video_id, detail)
+                logger.info("{} rejected the comment: {}.", stream.video_id, detail)
                 return True
 
-            # post_comment returned False — could be transient (auth error,
-            # quota, etc.). Do NOT mark the stream — it can be retried on
-            # the next cron run after a manual token refresh.
-            logger.error("✗ Failed to post comment for {}.", stream.video_id)
+            if outcome == "failed":
+                # Nothing was posted (quota, auth): put it back for next run.
+                self._repo.finish(stream.video_id, "pending")
+                logger.error("✗ Failed to post comment for {}.", stream.video_id)
+                return False
+
+            # The request went out but we don't know whether YouTube took it.
+            # Retrying could post it twice, so it stays 'posting' for a person
+            # to check the video and set 'posted' or 'pending'.
+            logger.critical(
+                "{} may or may not have its comment — left as 'posting': {}",
+                stream.video_id,
+                detail,
+            )
             return False
 
         except Exception as exc:
             logger.exception("Error processing {}: {}", stream.video_id, exc)
             return False
 
-    def _give_up_if_stale(self, stream, status: str) -> bool:
-        """Take *stream* out of the queue with *status* once it started more
-        than GIVE_UP_AFTER ago; until then leave it for the next run. A
-        stream with no start time is kept, as before."""
+    def _give_up_if_stale(self, stream: QueuedStream, status: str) -> bool:
+        """Take *stream* out of the queue with *status* once it started (or,
+        if it never did, was first timestamped) more than GIVE_UP_AFTER ago;
+        until then leave it for the next run."""
         try:
-            started = _parse_iso(stream.stream_start_time)
+            since = _parse_iso(stream.started_at or stream.created_at)
         except (TypeError, ValueError, AttributeError):
-            started = None
-        if started is None or datetime.now(timezone.utc) - started < GIVE_UP_AFTER:
+            since = None
+        if since is None or datetime.now(timezone.utc) - since < GIVE_UP_AFTER:
             logger.warning("{} {} — retrying next run.", stream.video_id, status)
             return False
 
-        self._stream_repo.mark_as_processed(stream.id, success=True, status=status)
+        self._repo.finish(stream.video_id, status)
         logger.warning(
             "{} {} after {} — given up.", stream.video_id, status, GIVE_UP_AFTER
         )
@@ -164,20 +186,19 @@ class StreamMonitorService:
         if not start_time:
             return []
 
-        lines: list[str] = []
+        entries = []
         for m in messages:
             try:
-                ts = format_timestamp(start_time, m.user_timestamp, m.delay)
-                msg = remove_custom_emojis(m.message.strip())
-                user = remove_at_symbol(m.user_name)
-
-                if msg:
-                    lines.append(f"{ts} – _{msg}_ (by {user})")
-                else:
-                    lines.append(f"{ts} – (by {user})")
+                entries.append(
+                    (
+                        offset_seconds(start_time, m.created_at, m.delay),
+                        remove_custom_emojis(m.message.strip()).strip(),
+                        remove_at_symbol(m.user_name),
+                    )
+                )
             except Exception as exc:
                 logger.error("Error formatting message: {}", exc)
-        return lines
+        return comment_lines(entries)
 
 
 def _truncate(body: str, max_len: int = YOUTUBE_COMMENT_MAX_LENGTH) -> str:

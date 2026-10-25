@@ -24,21 +24,50 @@ def format_timestamp(start_time_str: str, user_time_str: str, delay: int) -> str
         Formatted timestamp string, e.g. "01:23:45" or "12:34".
     """
     try:
-        start_time = _parse_iso(start_time_str)
-        user_time = _parse_iso(user_time_str)
-
-        adjusted = user_time - timedelta(seconds=delay)
-        total_seconds = max(0, int((adjusted - start_time).total_seconds()))
-
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        if hours:
-            return f"{hours:02}:{minutes:02}:{seconds:02}"
-        return f"{minutes:02}:{seconds:02}"
+        return hms(offset_seconds(start_time_str, user_time_str, delay))
     except Exception as exc:
         logger.error("Error formatting timestamp: {}", exc)
         return "00:00"
+
+
+def offset_seconds(start_time_str: str, user_time_str: str, delay: int) -> int:
+    """Seconds into the stream that *user_time_str* minus *delay* points at."""
+    adjusted = _parse_iso(user_time_str) - timedelta(seconds=delay)
+    return max(0, int((adjusted - _parse_iso(start_time_str)).total_seconds()))
+
+
+def hms(total_seconds: int) -> str:
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+    return f"{minutes:02}:{seconds:02}"
+
+
+def comment_lines(entries: list[tuple[int, str, str]], window: int = 10) -> list[str]:
+    """Turn (seconds, title, user) entries into comment lines, oldest first.
+
+    Viewers react to one moment together (Lightor, arXiv 1910.12201), so
+    entries within *window* seconds of the first one in a group become one
+    line at the earliest time, keeping every title and every user once.
+    """
+    groups: list[list[tuple[int, str, str]]] = []
+    for entry in sorted(entries, key=lambda e: e[0]):
+        if groups and entry[0] - groups[-1][0][0] <= window:
+            groups[-1].append(entry)
+        else:
+            groups.append([entry])
+
+    lines = []
+    for group in groups:
+        titles = list(dict.fromkeys(t for _, t, _ in group if t))
+        users = ", ".join(dict.fromkeys(u for _, _, u in group))
+        ts = hms(group[0][0])
+        if titles:
+            lines.append(f"{ts} – _{' / '.join(titles)}_ (by {users})")
+        else:
+            lines.append(f"{ts} – (by {users})")
+    return lines
 
 
 def timestamp_to_seconds(timestamp: str) -> int:

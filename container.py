@@ -15,11 +15,7 @@ from infrastructure.config import Settings
 from infrastructure.discord_client import DiscordClient
 from infrastructure.logging_setup import configure_logging
 from infrastructure.supabase_client import SupabaseClient
-from infrastructure.supabase_repository import (
-    SupabaseChannelRepository,
-    SupabaseStreamRepository,
-    SupabaseTimestampRepository,
-)
+from infrastructure.supabase_repository import SupabaseRepository
 from infrastructure.youtube_api_client import YouTubeApiClient
 from routes.clip_routes import create_clip_blueprint
 from routes.health_routes import create_health_blueprint
@@ -42,10 +38,7 @@ def create_app() -> Flask:
         settings = Settings.from_env()
 
         # -- Infrastructure layer -------------------------------------------
-        sb_client = SupabaseClient(settings)
-        ts_repo = SupabaseTimestampRepository(sb_client, settings)
-        stream_repo = SupabaseStreamRepository(sb_client, settings)
-        channel_repo = SupabaseChannelRepository(sb_client, settings)
+        repo = SupabaseRepository(SupabaseClient(settings))
         youtube = YouTubeApiClient(settings)
         discord = DiscordClient(settings)
 
@@ -53,18 +46,12 @@ def create_app() -> Flask:
 
         # -- Service layer --------------------------------------------------
         clip_service = ClipService(
-            timestamp_repo=ts_repo,
-            stream_repo=stream_repo,
-            channel_repo=channel_repo,
+            repo=repo,
             discord=discord,
             youtube=youtube,
             tool_used=settings.tool_used,
         )
-        monitor_service = StreamMonitorService(
-            stream_repo=stream_repo,
-            ts_repo=ts_repo,
-            youtube=youtube,
-        )
+        monitor_service = StreamMonitorService(repo=repo, youtube=youtube)
 
         logger.debug("Service layer initialized")
 

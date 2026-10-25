@@ -1,9 +1,9 @@
 """YouTube Data API + OAuth client implementation.
 
 Implements core.interfaces.YouTubeClient. Handles:
-- Looking up a stream by its video id via the Data API
-- Checking video status (public, member-only, live, etc.)
-- Posting comments via OAuth with retry logic
+- Looking up videos (owner, start time, live, privacy) via the Data API
+- Detecting member-only streams
+- Posting comments via OAuth, at most once
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from loguru import logger
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from core.entities import StreamInfo, VideoStatus
+from core.entities import Video
 from core.interfaces import YouTubeClient
 from infrastructure.config import Settings
 
@@ -51,98 +51,42 @@ class YouTubeApiClient(YouTubeClient):
 
     # -- YouTubeClient interface --------------------------------------------
 
-    def get_stream(self, video_id: str) -> Optional[StreamInfo]:
-        """Look up the one stream *video_id* (1 quota unit; a search costs 100)."""
+    def get_videos(self, video_ids: list[str]) -> Optional[dict[str, Video]]:
+        """Look up to 50 videos in one call (1 quota unit, whatever the count)."""
         try:
             resp = self._session.get(
                 f"{YOUTUBE_API_BASE}/videos",
                 params={
-                    "part": "snippet,liveStreamingDetails",
-                    "id": video_id,
+                    "part": "snippet,status,liveStreamingDetails",
+                    "id": ",".join(video_ids),
+                    "maxResults": 50,
                     "key": self._api_key,
                 },
-                timeout=10,
-            )
-            resp.raise_for_status()
-            items = resp.json().get("items", [])
-        except Exception as exc:
-            logger.exception("Error fetching stream {}: {}", video_id, exc)
-            return None
-        if not items:
-            logger.warning("Video {} not found", video_id)
-            return None
-
-        snippet = items[0]["snippet"]
-        details = items[0].get("liveStreamingDetails", {})
-        live = snippet.get("liveBroadcastContent") == "live"
-        return StreamInfo(
-            video_id=video_id,
-            title=snippet.get("title", ""),
-            status="live" if live else "completed",
-            url=f"https://www.youtube.com/watch?v={video_id}",
-            channel=snippet.get("channelTitle", ""),
-            channel_id=snippet.get("channelId", ""),
-            start_time=details.get("actualStartTime"),
-            end_time=details.get("actualEndTime"),
-        )
-
-    def check_video_status(self, video_id: str) -> VideoStatus:
-        """Check if a video is public, live, member-only, etc."""
-        try:
-            params = {
-                "part": "status,statistics,snippet,liveStreamingDetails",
-                "id": video_id,
-                "key": self._api_key,
-            }
-            resp = self._session.get(
-                f"{YOUTUBE_API_BASE}/videos",
-                params=params,
                 timeout=self._timeout,
             )
             resp.raise_for_status()
             items = resp.json().get("items", [])
-
-            if not items:
-                logger.warning("No video data returned for {}", video_id)
-                return VideoStatus()
-
-            status = self._parse_video_status(items[0], video_id)
-            logger.debug(
-                "Video {} status: can_comment={}, live={}, member_only={}",
-                video_id,
-                status.can_comment,
-                status.is_live,
-                status.is_member_only,
-            )
-            return status
-
         except Exception as exc:
-            logger.exception("Error checking video status for {}: {}", video_id, exc)
-            return VideoStatus()
+            logger.exception("Error fetching videos {}: {}", video_ids, exc)
+            return None
+        return {item["id"]: _to_video(item) for item in items}
 
-    def post_comment(
-        self, video_id: str, comment_body: str, max_retries: int = 3
-    ) -> bool | str:
-        """Post a comment with retry logic. Returns True, False, or 'member_only'.
+    def post_comment(self, video_id: str, comment_body: str) -> tuple[str, str]:
+        """Post *comment_body* once. Nothing is retried after the request went
+        out: if YouTube may have taken it, a retry could post it twice."""
+        # Imported here, not at the top: only the comment cron needs it.
+        from googleapiclient.errors import HttpError
 
-        The caller has just checked the video's status, so it isn't checked
-        again here (that cost an API call and a member-only scrape per post).
-        Retries use exponential backoff (5s, 10s, 20s) instead of flat 60s.
-        Auth errors are NOT treated as permanent — next cron run can retry
-        after a manual token refresh.
-        """
-        base_delay = 5
-        for attempt in range(max_retries):
-            try:
-                logger.info(
-                    "Posting comment to {} (attempt {}/{})",
-                    video_id,
-                    attempt + 1,
-                    max_retries,
-                )
+        try:
+            yt = self._get_authenticated_client()
+        except Exception:
+            return "failed", "oauth"
 
-                yt = self._get_authenticated_client()
-                yt.commentThreads().insert(
+        logger.info("Posting comment to {}", video_id)
+        try:
+            resp = (
+                yt.commentThreads()
+                .insert(
                     part="snippet",
                     body={
                         "snippet": {
@@ -152,108 +96,39 @@ class YouTubeApiClient(YouTubeClient):
                             },
                         }
                     },
-                ).execute()
-
-                logger.success("Comment posted to {}.", video_id)
-                return True
-
-            except Exception as exc:
-                error_msg = str(exc).lower()
-                logger.error(
-                    "Attempt {}/{} failed for {}: {}",
-                    attempt + 1,
-                    max_retries,
-                    video_id,
-                    exc,
                 )
+                .execute()
+            )
+        except HttpError as exc:
+            # The reasons live in error_details; str(exc) only shows them
+            # when the error carries the request URI.
+            error = f"{exc.error_details} {exc}".lower()
+            if exc.resp.status >= 500:
+                return "unknown", error
+            if "quotaexceeded" in error:
+                logger.critical("YouTube API quota exceeded!")
+                return "failed", "quota"
+            if "commentsdisabled" in error:
+                return "rejected", "not_commentable"
+            if any(
+                kw in error
+                for kw in (
+                    "forbidden",
+                    "insufficientpermissions",
+                    "channelsubscriptionrequired",
+                )
+            ):
+                return "rejected", "member_only"
+            return "failed", error
+        except Exception as exc:  # timeout, dropped connection: may have posted
+            return "unknown", str(exc)
 
-                if any(
-                    kw in error_msg
-                    for kw in (
-                        "commentsdisabled",
-                        "forbidden",
-                        "insufficientpermissions",
-                        "channelsubscriptionrequired",
-                    )
-                ):
-                    logger.warning(
-                        "{} — comments restricted, marking member_only.", video_id
-                    )
-                    return "member_only"
-                if "quotaexceeded" in error_msg:
-                    logger.critical("YouTube API quota exceeded! Stopping.")
-                    return False
-
-                # Auth errors (expired token) — fail this run, don't mark permanent.
-                # Next cron run can succeed after manual token refresh.
-                if attempt < max_retries - 1:
-                    backoff = base_delay * (2**attempt)
-                    logger.info("Retrying in {}s...", backoff)
-                    time.sleep(backoff)
-
-        logger.error("All {} attempts failed for {}.", max_retries, video_id)
-        return False
+        logger.success("Comment posted to {}.", video_id)
+        return "posted", resp.get("id", "")
 
     # -- internal helpers ---------------------------------------------------
 
-    def _parse_video_status(self, video_data: dict, video_id: str) -> VideoStatus:
-        status = video_data.get("status", {})
-        snippet = video_data.get("snippet", {})
-        live_details = video_data.get("liveStreamingDetails", {})
-
-        privacy = status.get("privacyStatus", "")
-        is_public = privacy == "public"
-        is_unlisted = privacy == "unlisted"
-        comments_disabled = status.get("madeForKids", False)
-
-        # Live broadcast check
-        broadcast = snippet.get("liveBroadcastContent", "none")
-        if broadcast in ("live", "upcoming"):
-            logger.info("{} is {} — skipping.", video_id, broadcast)
-            return VideoStatus(
-                is_public=is_public,
-                is_unlisted=is_unlisted,
-                is_live=True,
-                live_status=broadcast,
-                comments_disabled=False,
-            )
-
-        # Started but not ended → still live
-        if live_details.get("actualStartTime") and not live_details.get(
-            "actualEndTime"
-        ):
-            logger.info("{} is currently live (no end time).", video_id)
-            return VideoStatus(
-                is_public=is_public,
-                is_unlisted=is_unlisted,
-                is_live=True,
-                live_status="live",
-                comments_disabled=False,
-            )
-
-        is_member_only = self._check_member_only(video_id)
-        can_comment = (
-            (is_public or is_unlisted) and not comments_disabled and not is_member_only
-        )
-
-        logger.info(
-            "{} — public={} unlisted={} disabled={} member={}",
-            video_id,
-            is_public,
-            is_unlisted,
-            comments_disabled,
-            is_member_only,
-        )
-
-        return VideoStatus(
-            can_comment=can_comment,
-            is_member_only=is_member_only,
-            is_public=is_public,
-            is_unlisted=is_unlisted,
-            comments_disabled=comments_disabled,
-        )
-
-    def _check_member_only(self, video_id: str) -> bool:
+    def is_member_only(self, video_id: str) -> bool:
         """Scrape the YouTube page to detect member-only badges.
 
         Results are cached in-memory for the lifetime of this client
@@ -355,3 +230,21 @@ class YouTubeApiClient(YouTubeClient):
                 type(exc).__name__,
             )
             raise
+
+
+def _to_video(item: dict) -> Video:
+    snippet = item.get("snippet", {})
+    status = item.get("status", {})
+    details = item.get("liveStreamingDetails", {})
+    started = details.get("actualStartTime")
+    return Video(
+        video_id=item["id"],
+        title=snippet.get("title", ""),
+        channel_id=snippet.get("channelId", ""),
+        channel_title=snippet.get("channelTitle", ""),
+        started_at=started,
+        is_live=snippet.get("liveBroadcastContent") in ("live", "upcoming")
+        or bool(started and not details.get("actualEndTime")),
+        visible=status.get("privacyStatus") in ("public", "unlisted"),
+        made_for_kids=bool(status.get("madeForKids")),
+    )

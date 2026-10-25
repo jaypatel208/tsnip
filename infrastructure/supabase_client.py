@@ -2,11 +2,13 @@
 
 Uses requests.Session for connection pooling (TCP reuse) and
 pre-configures auth headers so callers don't repeat boilerplate.
+Filters always go through `params`, so requests URL-encodes them and a
+value can never add filters of its own.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from loguru import logger
@@ -28,92 +30,54 @@ class SupabaseClient:
                 "Authorization": f"Bearer {settings.supabase_api_key}",
             }
         )
-        # Retry transient network errors automatically
+        # Retry transient gateway errors. Not PATCH: a retried claim that
+        # already went through would look lost and strand the stream.
         retry = Retry(
             total=2,
             backoff_factor=0.3,
             status_forcelist=[502, 503, 504],
-            allowed_methods=["GET", "POST", "PATCH"],
+            allowed_methods=["GET", "POST"],
         )
         self._session.mount("https://", HTTPAdapter(max_retries=retry))
         self._timeout = 10
         logger.debug("SupabaseClient initialized (base_url={})", self._base_url)
 
-    # -- helpers -------------------------------------------------------------
-
-    def get(
-        self, table: str, query: str = "", timeout: Optional[int] = None
-    ) -> list[dict[str, Any]]:
-        """GET rows from *table* with an optional PostgREST query string."""
-        url = f"{self._base_url}/{table}"
-        if query:
-            url = f"{url}?{query}"
-
-        logger.debug("Supabase GET {}", url)
-        try:
-            resp = self._session.get(url, timeout=timeout or self._timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.Timeout:
-            logger.error(
-                "Supabase GET timeout — table={}, timeout={}s",
-                table,
-                timeout or self._timeout,
-            )
-            raise
-        except requests.HTTPError as exc:
-            logger.error(
-                "Supabase GET failed — table={}, status={}, body={}",
-                table,
-                exc.response.status_code if exc.response is not None else "?",
-                exc.response.text[:200] if exc.response is not None else "?",
-            )
-            raise
-        except requests.ConnectionError:
-            logger.error("Supabase connection error — table={}", table)
-            raise
-
-    def post(
-        self, table: str, data: Any, timeout: Optional[int] = None
-    ) -> requests.Response:
-        """POST (insert) *data* into *table*."""
-        url = f"{self._base_url}/{table}"
-        headers = {
-            "Content-Type": "application/json",
-            "Prefer": "return=representation",
-        }
-        logger.debug(
-            "Supabase POST {} ({} record(s))",
-            table,
-            len(data) if isinstance(data, list) else 1,
-        )
-        try:
-            resp = self._session.post(
-                url, json=data, headers=headers, timeout=timeout or self._timeout
-            )
-            return resp
-        except requests.Timeout:
-            logger.error("Supabase POST timeout — table={}", table)
-            raise
-        except requests.ConnectionError:
-            logger.error("Supabase POST connection error — table={}", table)
-            raise
+    def get(self, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
+        """GET rows from *table* filtered by PostgREST *params*."""
+        return self._call("GET", table, params=params).json()
 
     def patch(
-        self, table: str, query: str, data: Any, timeout: Optional[int] = None
-    ) -> requests.Response:
-        """PATCH (update) rows in *table* matching *query*."""
-        url = f"{self._base_url}/{table}?{query}"
-        headers = {"Content-Type": "application/json"}
-        logger.debug("Supabase PATCH {} where {}", table, query)
+        self, table: str, params: dict[str, str], data: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """PATCH rows of *table* matching *params*; returns the updated rows."""
+        return self._call(
+            "PATCH",
+            table,
+            params=params,
+            json=data,
+            headers={"Prefer": "return=representation"},
+        ).json()
+
+    def rpc(self, function: str, body: dict[str, Any]) -> Any:
+        """Call a Postgres function."""
+        return self._call("POST", f"rpc/{function}", json=body).json()
+
+    def _call(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+        logger.debug("Supabase {} {} {}", method, path, kwargs.get("params", ""))
         try:
-            resp = self._session.patch(
-                url, json=data, headers=headers, timeout=timeout or self._timeout
+            resp = self._session.request(
+                method, f"{self._base_url}/{path}", timeout=self._timeout, **kwargs
             )
-            return resp
-        except requests.Timeout:
-            logger.error("Supabase PATCH timeout — table={}, query={}", table, query)
+        except requests.RequestException as exc:
+            logger.error("Supabase {} {} — {}", method, path, type(exc).__name__)
             raise
-        except requests.ConnectionError:
-            logger.error("Supabase PATCH connection error — table={}", table)
-            raise
+        if not resp.ok:
+            logger.error(
+                "Supabase {} {} failed — status={}, body={}",
+                method,
+                path,
+                resp.status_code,
+                resp.text[:200],
+            )
+        resp.raise_for_status()
+        return resp

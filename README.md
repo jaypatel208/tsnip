@@ -199,6 +199,30 @@ uv run ruff check --fix .
 uv run ruff format .
 ```
 
+### Tests
+
+```bash
+# Python unit + integration tests (no network, no database)
+uv run python -m unittest discover -s tests -t .
+
+# Database tests (pgTAP) — needs Docker and the Supabase CLI
+supabase start
+supabase db reset   # applies supabase/migrations/ to a fresh local DB
+supabase test db    # runs supabase/tests/
+```
+
+### Database changes
+
+The schema lives in `supabase/migrations/` — never change it from the dashboard.
+
+```bash
+supabase migration new <name>   # write the SQL, add a test in supabase/tests/
+supabase db reset && supabase test db
+supabase link --project-ref <ref> && supabase db push
+```
+
+Change tables in two steps (expand, then contract): first add the new shape next to the old one and deploy code that uses it, and only drop the old shape in a later migration. `supabase/pending/` holds contract steps that are waiting for their turn.
+
 ---
 
 ## 💝 Support Tsnip

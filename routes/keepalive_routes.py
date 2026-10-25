@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from flask import Blueprint, Response, jsonify, request
 from loguru import logger
 
@@ -17,8 +19,11 @@ def create_keepalive_blueprint(discord: DiscordClient, settings: Settings) -> Bl
         client_ip = request.remote_addr
         logger.info("Keepalive request from {}", client_ip)
 
-        secret = request.args.get("secret", "")
-        if secret != settings.cron_secret_dc_keep_alive:
+        # Header first, like the monitor; ?secret= still works for older callers.
+        secret = request.headers.get("X-Cron-Secret") or request.args.get("secret", "")
+        if not hmac.compare_digest(
+            secret.encode(), settings.cron_secret_dc_keep_alive.encode()
+        ):
             logger.warning("Invalid keepalive secret from {}", client_ip)
             return Response("Unauthorized", status=401)
 
