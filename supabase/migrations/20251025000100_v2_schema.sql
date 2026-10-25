@@ -199,9 +199,13 @@ begin
   -- Only rows whose chat really belongs to the video; the rest are the old
   -- wrong links. A stream v1 commented on since the last run is updated
   -- too, so v2 doesn't comment on it again.
+  -- Some early rows saved the channel as 'temporary_channel_id': keep the
+  -- stream and its state, with the owner unknown.
   insert into public.streams (video_id, channel_id, title, started_at, state)
   select distinct on (y.video_id)
-         y.video_id, y.channel_id, y.title,
+         y.video_id,
+         case when y.channel_id ~ '^UC[A-Za-z0-9_-]{22}$' then y.channel_id end,
+         y.title,
          nullif(y.stream_start_time::text, '')::timestamp at time zone 'UTC',
          case
            when not coalesce(y.marked, false) then 'pending'
@@ -211,7 +215,6 @@ begin
          end
     from public.yt_db y
    where y.video_id = public.video_id_from_chat(y.chat_id)
-     and y.channel_id ~ '^UC[A-Za-z0-9_-]{22}$'
    order by y.video_id, y.marked desc
   on conflict (video_id) do update
      set state = excluded.state
