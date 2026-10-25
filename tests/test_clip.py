@@ -206,8 +206,8 @@ class CommentFooterTest(unittest.TestCase):
         self.assertTrue(body.endswith(COMMENT_FOOTER))
         self.assertLessEqual(len(body), 9000)
 
-    def test_the_footer_has_no_link(self):
-        self.assertNotIn("http", COMMENT_FOOTER)
+    def test_the_footer_ends_with_the_comment_placement_link(self):
+        self.assertTrue(COMMENT_FOOTER.endswith(GLIDE_LINK + "/comment"))
 
 
 class VercelRedirectsTest(unittest.TestCase):
