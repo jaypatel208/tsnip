@@ -42,9 +42,16 @@ You'll need **Nightbot** set up on your channel. If you haven't done this yet, f
 !addcom !ts $(urlfetch https://tsnip.vercel.app/api/clip?user=$(user)&chatId=$(chatid)&channelid=$(channelid)&msg=$(querystring)&delay=22)
 ```
 
-2. **Set User Permissions** (Recommended) - To prevent spam, change the **Required User-Level** to **Moderator** in Nightbot settings.
+2. **Approve the Tsnip bot** (Strongly recommended) - YouTube holds many of the bot's comments for review, and viewers never see a held comment. Comments from an **approved user** are published automatically and skip YouTube's review filters ([YouTube Help](https://support.google.com/youtube/answer/9483359)). On a computer:
+   1. Open [YouTube Studio](https://studio.youtube.com) → **Settings** → **Community** → **Automated filters**.
+   2. Under **Approved users**, paste the bot's channel: `https://www.youtube.com/@tsnip-bot`
+   3. Click **Save**.
 
-3. **Customize Delay** - Adjust the `delay=22` parameter based on your stream setup:
+   Making the bot a moderator is not enough on its own: that only stops its links being blocked. Approved users is the setting that publishes its comments.
+
+3. **Set User Permissions** (Recommended) - To prevent spam, change the **Required User-Level** to **Moderator** in Nightbot settings.
+
+4. **Customize Delay** - Adjust the `delay=22` parameter based on your stream setup:
 
 | Stream Type | Recommended Delay | Use Case |
 |-------------|------------------|----------|
@@ -69,7 +76,7 @@ Once integrated, you and your viewers can create timestamps using these commands
 
 ## 🎯 How It Works
 
-After your live stream ends, within **30 minutes** our bot will automatically comment with all collected timestamps:
+After your live stream ends, within about **20 minutes** our bot will automatically comment with all collected timestamps:
 
 <div align="center">
   <img src="assets\bot_comments.png" alt="Bot Comment Example" width="420"/>
@@ -79,13 +86,17 @@ After your live stream ends, within **30 minutes** our bot will automatically co
 
 ### 🔍 Finding the Bot Comment
 
-Since our bot comments on multiple streams in a similar format, YouTube may flag it as spam and hide it by default. To find the comment, simply **sort comments by "Newest first"** on the stream — the bot's comment will be right there:
+Since our bot comments on multiple streams in a similar format, YouTube may flag it as spam and hold it for review, where viewers can't see it. The fix is to [approve the bot](#integration-steps) (step 2 above).
+
+**Missed comments from before you approved the bot?** In YouTube Studio, open **Comments** → **Held for review**, find the Tsnip comment and approve it. YouTube keeps held comments there for 60 days.
+
+If you can see the comment, **sort comments by "Newest first"** on the stream to find it:
 
 <div align="center">
   <img src="assets/navigate_bot_comment_on_stream.gif" alt="How to find the bot comment" width="420"/>
 </div>
 
-> 💡 **Pro Tip for Creators**: Add our bot as an **approved user** on your channel. Once the bot comments, **pin that comment** and engage with it (like/reply). A pinned comment is visible to all viewers instantly — no sorting needed!
+> 💡 **Pro Tip for Creators**: Once the bot comments, **pin that comment** and engage with it (like/reply). A pinned comment is the first thing every viewer sees — no sorting needed!
 
 ---
 
