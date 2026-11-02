@@ -12,13 +12,10 @@ DEFAULT_COMMENT_TEMPLATE = (
     "Tsnip is free 💙 support it, play Glide: " + GLIDE_LINK
 )
 
-# Closes the timestamps comment posted after the stream. No link: of the
-# bot's comments since Oct 15, 77% without a link are public against 8% with
-# the Glide link (YouTube holds the rest), so Glide is named, not linked.
-COMMENT_FOOTER = (
-    "Thank you for using Tsnip. It's free — if it helped, support it by "
-    "playing Glide, my word puzzle game on the Play Store."
-)
+# Closes the timestamps comment posted after the stream. No promotion: YouTube
+# made public 77% of comments with just this line, 25% of those naming Glide
+# and 8% of those linking it. Glide is promoted in the chat reply and Discord.
+COMMENT_FOOTER = "Thank you for using Tsnip."
 
 # YouTube limits
 YOUTUBE_COMMENT_MAX_LENGTH = 9000

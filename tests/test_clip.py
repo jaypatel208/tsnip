@@ -206,10 +206,13 @@ class CommentFooterTest(unittest.TestCase):
         self.assertTrue(body.endswith(COMMENT_FOOTER))
         self.assertLessEqual(len(body), 9000)
 
-    def test_the_footer_names_glide_without_a_link(self):
-        # Linked comments were public 8% of the time, unlinked ones 77%.
-        self.assertIn("Glide", COMMENT_FOOTER)
-        self.assertNotIn("http", COMMENT_FOOTER)
+    def test_the_comment_on_the_video_promotes_nothing(self):
+        # YouTube hides most bot comments that promote: 77% of plain ones
+        # were public, 25% naming Glide, 8% linking it.
+        self.assertEqual(COMMENT_FOOTER, "Thank you for using Tsnip.")
+
+    def test_glide_stays_in_the_chat_reply(self):
+        self.assertTrue(line("").endswith(GLIDE_LINK))
 
 
 class VercelRedirectsTest(unittest.TestCase):
