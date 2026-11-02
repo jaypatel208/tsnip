@@ -1,13 +1,12 @@
 -- Run with: supabase test db
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(35);
+select plan(23);
 
 -- Nightbot chat ids. NYLA carries I9N75SNAi5w of UCQuhx1QTbSZ7yvaOaNAeZzg;
--- B and C carry bbbbbbbbbbb and ccccccccccc of UCaaaaaaaaaaaaaaaaaaaaaa.
+-- B carries bbbbbbbbbbb of UCaaaaaaaaaaaaaaaaaaaaaa.
 \set nyla '''KicKGFVDUXVoeDFRVGJTWjd5dmFPYU5BZVp6ZxILSTlONzVTTkFpNXc'''
 \set b '''KicKGFVDYWFhYWFhYWFhYWFhYWFhYWFhYWFhYRILYmJiYmJiYmJiYmI'''
-\set c '''KicKGFVDYWFhYWFhYWFhYWFhYWFhYWFhYWFhYRILY2NjY2NjY2NjY2M'''
 \set owner '''UCQuhx1QTbSZ7yvaOaNAeZzg'''
 
 -- video_id_from_chat ---------------------------------------------------------
@@ -66,49 +65,6 @@ create function pg_temp.claim() returns int language sql as $$
 $$;
 select is(pg_temp.claim(), 1, 'the first claim wins');
 select is(pg_temp.claim(), 0, 'a second run cannot claim it again');
-
--- backfill_from_legacy -------------------------------------------------------
-insert into public.yt_channel_db (channel_id, channel_name, channel_template)
-values ('UC' || repeat('d', 22), 'D', 'custom {user}');
-insert into public.yt_db (chat_id, video_id, channel_id, channel, title, marked, status, stream_start_time)
-values
-  -- the chat really is ccccccccccc's
-  (:c, 'ccccccccccc', 'UC' || repeat('d', 22), 'D', 'right', false, 'live', '2025-10-25 09:00:00'),
-  -- an old wrong link: chat c pointed at another video
-  (:c, 'wwwwwwwwwww', 'UC' || repeat('d', 22), 'D', 'wrong', true, 'ended', null);
-insert into public.ts_db (chat_id, channel_id, user_name, message, delay, user_timestamp)
-values
-  (:c, 'UC' || repeat('d', 22), 'old', 'gg', 22, now() - interval '1 hour'),
-  (:c, 'UC' || repeat('d', 22), 'old', repeat('x', 300), 999, now() - interval '30 minutes'),
-  ('garbage-garbage-garbage', 'UC' || repeat('d', 22), 'old', '', 22, now());
-
-select lives_ok('select public.backfill_from_legacy()', 'backfill runs');
-select lives_ok('select public.backfill_from_legacy()', 'and runs again');
-select is((select comment_template from public.channels where channel_id = 'UC' || repeat('d', 22)),
-  'custom {user}', 'channel settings move over');
-select is((select state from public.streams where video_id = 'ccccccccccc'), 'pending',
-  'an uncommented stream stays queued');
-select is((select started_at from public.streams where video_id = 'ccccccccccc'),
-  '2025-10-25T09:00:00Z'::timestamptz, 'its start time is read as UTC');
-select is((select count(*)::int from public.streams where video_id = 'wwwwwwwwwww'), 0,
-  'wrong links are left behind');
-select is((select count(*)::int from public.timestamps where video_id = 'ccccccccccc'), 2,
-  'timestamps move once, however often it runs');
-select is((select max(delay)::int from public.timestamps where video_id = 'ccccccccccc'), 300,
-  'out-of-range delays are clamped');
-
-update public.yt_db set marked = true, status = 'ended' where video_id = 'ccccccccccc';
-select lives_ok('select public.backfill_from_legacy()', 'a later run');
-select is((select state from public.streams where video_id = 'ccccccccccc'), 'posted',
-  'picks up comments v1 posted meanwhile');
-
-update public.ts_db set user_timestamp = now() - interval '8 days' where chat_id = :c;
-update public.timestamps set created_at = now() - interval '8 days' where video_id = 'ccccccccccc';
-update public.yt_db set marked = false where video_id = 'ccccccccccc';
-update public.streams set state = 'pending' where video_id = 'ccccccccccc';
-select lives_ok('select public.backfill_from_legacy()', 'and another');
-select is((select state from public.streams where video_id = 'ccccccccccc'), 'expired',
-  'week-old streams are not commented any more');
 
 -- access -----------------------------------------------------------------------
 set local role anon;

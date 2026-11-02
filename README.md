@@ -221,7 +221,7 @@ supabase db reset && supabase test db
 supabase link --project-ref <ref> && supabase db push
 ```
 
-Change tables in two steps (expand, then contract): first add the new shape next to the old one and deploy code that uses it, and only drop the old shape in a later migration. `supabase/pending/` holds contract steps that are waiting for their turn.
+Change tables in two steps (expand, then contract): first add the new shape next to the old one and deploy code that uses it, and only drop the old shape in a later migration.
 
 ---
 
